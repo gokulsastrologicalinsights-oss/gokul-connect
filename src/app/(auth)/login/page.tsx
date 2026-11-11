@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
+import { loginAction } from "@/app/actions/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,9 +26,17 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
+      // 1. Server-Side Rate Limiter & Pre-Authentication Guard
+      const serverResult = await loginAction({ email, password });
+      if (!serverResult.success) {
+        setError(serverResult.error || "Login attempt failed.");
+        setLoading(false);
+        return;
+      }
+
       if (isConfigured) {
         const supabase = createClient();
-        const { error: signInError } = await supabase.auth.signInWithPassword({
+        const { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
         });
@@ -35,6 +44,18 @@ export default function LoginPage() {
         if (signInError) {
           setError(signInError.message);
           setLoading(false);
+          return;
+        }
+
+        const mustChange = Boolean(
+          serverResult.mustChangePassword ||
+          signInData.user?.app_metadata?.must_change_password ||
+          signInData.user?.user_metadata?.must_change_password
+        );
+
+        if (mustChange) {
+          router.push("/update-password?mandatory=true");
+          router.refresh();
           return;
         }
 
@@ -90,25 +111,26 @@ export default function LoginPage() {
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
               {error && (
-                <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+                <div role="alert" aria-live="polite" className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
                   <AlertCircle className="h-4 w-4 shrink-0" />
                   <span>{error}</span>
                 </div>
               )}
 
               {infoMessage && (
-                <div className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-400">
+                <div role="status" aria-live="polite" className="flex items-center gap-2 rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3 text-sm text-emerald-400">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
                   <span>{infoMessage}</span>
                 </div>
               )}
 
               <div className="space-y-2">
-                <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                <label htmlFor="login-email" className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
                   <Mail className="h-3.5 w-3.5 text-slate-400" />
                   Email Address
                 </label>
                 <Input
+                  id="login-email"
                   type="email"
                   placeholder="owner@gokulconnect.com"
                   value={email}
@@ -120,7 +142,7 @@ export default function LoginPage() {
 
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                  <label htmlFor="login-password" className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
                     <Lock className="h-3.5 w-3.5 text-slate-400" />
                     Password
                   </label>
@@ -132,6 +154,7 @@ export default function LoginPage() {
                   </Link>
                 </div>
                 <Input
+                  id="login-password"
                   type="password"
                   placeholder="••••••••••••"
                   value={password}

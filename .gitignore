@@ -13,14 +13,28 @@
 # Production
 /build
 
-# Misc
+# Misc & Logs
 .DS_Store
+Thumbs.db
 *.pem
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editor directories
+.vscode/
+.idea/
 
 # Local env files - NEVER COMMIT SENSITIVE KEYS
+.env.local
 .env*.local
 .env
 !.env.example
+
+# Backup snapshots containing credentials / payloads
+scripts/backup/
 
 # Vercel
 .vercel
@@ -28,3 +42,9 @@
 # TypeScript
 *.tsbuildinfo
 next-env.d.ts
+
+# Ephemeral audit & UAT test screenshots (keep top-level product/UI screenshots)
+screenshots/audit-7-5-8/
+screenshots/css-verification/
+screenshots/uat-8-1/
+

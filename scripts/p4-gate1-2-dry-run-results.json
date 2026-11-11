@@ -1,0 +1,157 @@
+{
+  "engine": "PostgreSQL 18.6 (PGlite 0.5.15) on wasm32-unknown-emscripten, compiled by emcc (Emscripten gcc/clang-like replacement + linker emulating GNU ld) 6.0.13 (e13ee988ce3d87a738dd8f3661d02223308c412a), 32-bit",
+  "totalDurationMs": 2238,
+  "rollbackVerification": "VERIFIED",
+  "baselineRowsPreserved": true,
+  "results": [
+    {
+      "step": "016",
+      "name": "20261107_016_phase12_1_team_management_and_agent_assignment",
+      "version": "20261107202900",
+      "durationMs": 35,
+      "lines": 267,
+      "sha256": "742f5f9f1d1d644deff37fc64663478c41cea84655a2286f1a926ec77d9956ff",
+      "verification": {
+        "expectedCols": 3,
+        "foundCols": 3,
+        "expectedRpcs": 1,
+        "foundRpcs": 1
+      },
+      "dataIntact": true,
+      "tenantIsolationConfirmed": true,
+      "status": "SUCCESS"
+    },
+    {
+      "step": "017",
+      "name": "20261107_017_phase12_2_media_messaging",
+      "version": "20261107203000",
+      "durationMs": 15,
+      "lines": 162,
+      "sha256": "9f86c22dc4293cb01550da664dc1e6a6cdf5917ce559472c7d6e8305e3b43568",
+      "verification": {
+        "expectedTables": 1,
+        "foundTables": 1,
+        "expectedCols": 4,
+        "foundCols": 4
+      },
+      "dataIntact": true,
+      "tenantIsolationConfirmed": true,
+      "status": "SUCCESS"
+    },
+    {
+      "step": "018",
+      "name": "20261108_018_phase12_3_scheduled_messages",
+      "version": "20261108102000",
+      "durationMs": 18,
+      "lines": 262,
+      "sha256": "1dc5d86ced25a37a9bc046680152a0685da6ca59579186b21b75bdbf86340b71",
+      "verification": {
+        "expectedTables": 1,
+        "foundTables": 1,
+        "expectedRpcs": 2,
+        "foundRpcs": 2
+      },
+      "dataIntact": true,
+      "tenantIsolationConfirmed": true,
+      "status": "SUCCESS"
+    },
+    {
+      "step": "019",
+      "name": "20261108_019_phase12_4_campaign_management",
+      "version": "20261108102500",
+      "durationMs": 32,
+      "lines": 406,
+      "sha256": "5e681d5cfa33cab9e62e77b14abf1dd60a2ae6ce3f849e7a7150a99042539110",
+      "verification": {
+        "expectedTables": 2,
+        "foundTables": 2,
+        "expectedRpcs": 2,
+        "foundRpcs": 2
+      },
+      "dataIntact": true,
+      "tenantIsolationConfirmed": true,
+      "status": "SUCCESS"
+    },
+    {
+      "step": "020",
+      "name": "20261108_020_phase12_5_crm_lifecycle_and_followups",
+      "version": "20261108151500",
+      "durationMs": 43,
+      "lines": 318,
+      "sha256": "b15266c9854ed258351cc5d16f1a6bab17b822875104ddd7cb779c32c7944582",
+      "verification": {
+        "expectedTables": 4,
+        "foundTables": 4
+      },
+      "dataIntact": true,
+      "tenantIsolationConfirmed": true,
+      "status": "SUCCESS"
+    },
+    {
+      "step": "021",
+      "name": "20261109_021_phase12_6_notification_center_and_durable_reminders",
+      "version": "20261109110500",
+      "durationMs": 19,
+      "lines": 252,
+      "sha256": "3a8c2cee4c74be985b757214a6149b847fd7f6e3538bb8f91962fbdc10d602bc",
+      "verification": {
+        "expectedTables": 1,
+        "foundTables": 1,
+        "expectedCols": 4,
+        "foundCols": 4
+      },
+      "dataIntact": true,
+      "tenantIsolationConfirmed": true,
+      "status": "SUCCESS"
+    },
+    {
+      "step": "022",
+      "name": "20261109_022_phase12_7_visual_flows_and_realtime",
+      "version": "20261109185500",
+      "durationMs": 8,
+      "lines": 90,
+      "sha256": "a956d58439b52fbba4512a8ede0fb6bdf4c7303099faf427d8a2768a945bf4b9",
+      "verification": {
+        "expectedTables": 1,
+        "foundTables": 1
+      },
+      "dataIntact": true,
+      "tenantIsolationConfirmed": true,
+      "status": "SUCCESS"
+    },
+    {
+      "step": "023",
+      "name": "20261109_023_phase2_operational_reliability",
+      "version": "20261109191000",
+      "durationMs": 15,
+      "lines": 489,
+      "sha256": "4121a258074f48e23a8d855c59fb0b2a32c310a7bbedad08cebdd477616308ae",
+      "verification": {
+        "expectedRpcs": 3,
+        "foundRpcs": 3
+      },
+      "dataIntact": true,
+      "tenantIsolationConfirmed": true,
+      "status": "SUCCESS"
+    },
+    {
+      "step": "024",
+      "name": "20261109_024_phase_p3_2_labels_and_cron_locks",
+      "version": "20261109200500",
+      "durationMs": 9,
+      "lines": 325,
+      "sha256": "59bf44250cf972acc677ee191e51399140be9b2f9f3b28974b11537fc077857d",
+      "verification": {
+        "expectedTables": 1,
+        "foundTables": 0,
+        "expectedCols": 1,
+        "foundCols": 1,
+        "expectedRpcs": 4,
+        "foundRpcs": 4
+      },
+      "dataIntact": true,
+      "tenantIsolationConfirmed": true,
+      "status": "SUCCESS"
+    }
+  ]
+}

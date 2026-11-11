@@ -32,6 +32,17 @@ export async function validateBusinessAccess(slug: string): Promise<AuthorizedCo
       redirect("/login");
     }
 
+    // MANDATORY FIRST-TIME PASSWORD CHANGE GUARD:
+    // Disallow workspace, dashboard, inbox, connections, and automations access until temporary password is changed
+    const mustChangePassword = Boolean(
+      authUser.app_metadata?.must_change_password ??
+      authUser.user_metadata?.must_change_password
+    );
+
+    if (mustChangePassword) {
+      redirect("/update-password?mandatory=true");
+    }
+
     // 1. Fetch business by slug
     const { data: business, error: bError } = await supabase
       .from("businesses")
@@ -71,6 +82,7 @@ export async function validateBusinessAccess(slug: string): Promise<AuthorizedCo
       full_name: profile?.full_name || authUser.email || "User",
       avatar_url: profile?.avatar_url || null,
       is_superadmin: profile?.is_superadmin || false,
+      must_change_password: mustChangePassword,
       created_at: profile?.created_at || new Date().toISOString(),
       updated_at: profile?.updated_at || new Date().toISOString(),
     };
@@ -134,6 +146,15 @@ export async function getAuthorizedBusinesses(): Promise<Business[]> {
       return [];
     }
 
+    const mustChangePassword = Boolean(
+      authUser.app_metadata?.must_change_password ??
+      authUser.user_metadata?.must_change_password
+    );
+
+    if (mustChangePassword) {
+      return [];
+    }
+
     const { data: memberships } = await supabase
       .from("business_members")
       .select("business_id, businesses(*)")
@@ -142,9 +163,89 @@ export async function getAuthorizedBusinesses(): Promise<Business[]> {
 
     if (!memberships) return [];
 
-    return memberships
+    const baseBusinesses: Business[] = memberships
       .map((m: any) => m.businesses)
       .filter((b: any) => Boolean(b && b.is_active));
+
+    // Live Business Selection Counts (Active Connections, Live Unread Enquiries, Pending Follow-ups)
+    const businessesWithStats = await Promise.all(
+      baseBusinesses.map(async (b: Business) => {
+        try {
+          // 1. WhatsApp Connections live status
+          const { data: conns } = await supabase
+            .from("wa_connections")
+            .select("id, connection_status, is_enabled")
+            .eq("business_id", b.id);
+
+          const enabledConns = conns?.filter((c: any) => c.is_enabled) || [];
+          const connectedConns = enabledConns.filter(
+            (c: any) => c.connection_status === "connected"
+          );
+
+          let connectionStatus: "connected" | "disconnected" | "setup_required" = "setup_required";
+          if (connectedConns.length > 0) {
+            connectionStatus = "connected";
+          } else if (enabledConns.length > 0) {
+            connectionStatus = "disconnected";
+          } else {
+            connectionStatus = "setup_required";
+          }
+
+          // 2. Live Unread Enquiries count from wa_conversations
+          const { data: convData } = await supabase
+            .from("wa_conversations")
+            .select("unread_count")
+            .eq("business_id", b.id)
+            .gt("unread_count", 0);
+
+          const unreadEnquiriesCount = convData
+            ? convData.reduce((acc: number, c: any) => acc + (c.unread_count || 1), 0)
+            : 0;
+
+          // 3. Live Pending Follow-ups from crm_follow_ups or wa_conversations
+          let pendingCount = 0;
+          try {
+            const { count: crmCount } = await supabase
+              .from("crm_follow_ups")
+              .select("id", { count: "exact", head: true })
+              .eq("business_id", b.id)
+              .eq("status", "pending");
+            if (crmCount !== null && crmCount !== undefined) {
+              pendingCount = crmCount;
+            }
+          } catch {
+            const { count: convCount } = await supabase
+              .from("wa_conversations")
+              .select("id", { count: "exact", head: true })
+              .eq("business_id", b.id)
+              .eq("status", "pending_human");
+            pendingCount = convCount || 0;
+          }
+
+          return {
+            ...b,
+            stats: {
+              connectionStatus,
+              connectedNumbersCount: connectedConns.length,
+              unreadEnquiriesCount,
+              pendingRepliesCount: pendingCount,
+            },
+          };
+        } catch {
+          return {
+            ...b,
+            stats: {
+              connectionStatus: "setup_required",
+              connectedNumbersCount: 0,
+              unreadEnquiriesCount: 0,
+              pendingRepliesCount: 0,
+            },
+          };
+        }
+      })
+    );
+
+    return businessesWithStats as Business[];
   }
 
   // Local development fallback

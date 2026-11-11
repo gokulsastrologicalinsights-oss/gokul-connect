@@ -61,6 +61,7 @@ CREATE OR REPLACE FUNCTION public.check_user_business_access(b_id UUID)
 RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 STABLE
 AS $$
   SELECT EXISTS (
@@ -71,11 +72,16 @@ AS $$
   );
 $$;
 
+-- Restrict execution to authenticated sessions and service_role
+REVOKE EXECUTE ON FUNCTION public.check_user_business_access(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.check_user_business_access(UUID) TO authenticated, service_role;
+
 -- Helper function: check if authenticated user is superadmin
 CREATE OR REPLACE FUNCTION public.is_superadmin()
 RETURNS BOOLEAN
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public, pg_temp
 STABLE
 AS $$
   SELECT EXISTS (
@@ -84,6 +90,10 @@ AS $$
       AND up.is_superadmin = TRUE
   );
 $$;
+
+-- Restrict execution to authenticated sessions and service_role
+REVOKE EXECUTE ON FUNCTION public.is_superadmin() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_superadmin() TO authenticated, service_role;
 
 -- RLS POLICIES FOR businesses:
 -- Only active members of a business (or superadmin) can view that business
@@ -130,18 +140,52 @@ CREATE POLICY "Users can view members of their authorized businesses"
     OR public.is_superadmin()
   );
 
--- Only owners can manage business members
+-- Helper function: check if authenticated user is business owner
+CREATE OR REPLACE FUNCTION public.is_business_owner(b_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.business_members bm
+    WHERE bm.business_id = b_id
+      AND bm.user_id = auth.uid()
+      AND bm.role = 'owner'
+      AND bm.is_active = TRUE
+  );
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.is_business_owner(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_business_owner(UUID) TO authenticated, service_role;
+
+-- Helper function: check if authenticated user is business owner or admin
+CREATE OR REPLACE FUNCTION public.is_business_owner_or_admin(b_id UUID)
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+STABLE
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.business_members bm
+    WHERE bm.business_id = b_id
+      AND bm.user_id = auth.uid()
+      AND bm.role IN ('owner', 'admin')
+      AND bm.is_active = TRUE
+  );
+$$;
+
+REVOKE EXECUTE ON FUNCTION public.is_business_owner_or_admin(UUID) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.is_business_owner_or_admin(UUID) TO authenticated, service_role;
+
+-- Only owners can manage business members (non-recursive via security definer)
 CREATE POLICY "Owners can manage business members"
   ON public.business_members
   FOR ALL
   USING (
-    EXISTS (
-      SELECT 1 FROM public.business_members bm
-      WHERE bm.business_id = business_members.business_id
-        AND bm.user_id = auth.uid()
-        AND bm.role = 'owner'
-        AND bm.is_active = TRUE
-    ) OR public.is_superadmin()
+    public.is_business_owner(business_id) OR public.is_superadmin()
   );
 
 -- 5. AUTO-CREATE USER PROFILE ON AUTH SIGNUP TRIGGER
@@ -149,7 +193,7 @@ CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public
+SET search_path = public, pg_temp
 AS $$
 BEGIN
   INSERT INTO public.user_profiles (id, email, full_name)
@@ -162,6 +206,9 @@ BEGIN
   RETURN NEW;
 END;
 $$;
+
+REVOKE EXECUTE ON FUNCTION public.handle_new_user() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.handle_new_user() TO postgres, service_role;
 
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created

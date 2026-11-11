@@ -14,6 +14,10 @@ import {
 import { getAuthorizedBusinesses } from "@/lib/auth/tenant-guard";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { SignOutButton } from "@/components/auth/SignOutButton";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +26,26 @@ export default async function BusinessSelectionPage({
 }: {
   searchParams?: Promise<{ error?: string }>;
 }) {
+  if (isSupabaseConfigured()) {
+    const supabase = await createServerSupabaseClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user) {
+      redirect("/login");
+    }
+
+    const mustChangePassword = Boolean(
+      user.app_metadata?.must_change_password ??
+      user.user_metadata?.must_change_password
+    );
+
+    if (mustChangePassword) {
+      redirect("/update-password?mandatory=true");
+    }
+  }
+
   const businesses = await getAuthorizedBusinesses();
   const resolvedParams = searchParams ? await searchParams : undefined;
   const errorParam = resolvedParams?.error;
@@ -51,16 +75,7 @@ export default async function BusinessSelectionPage({
         </div>
 
         <div className="flex items-center gap-3">
-          <Link href="/login">
-            <Button
-              variant="outline"
-              size="sm"
-              className="border-slate-800 bg-slate-900/80 text-slate-300 hover:bg-slate-800 hover:text-white text-xs gap-1.5"
-            >
-              <LogOut className="h-3.5 w-3.5" />
-              Sign Out
-            </Button>
-          </Link>
+          <SignOutButton />
         </div>
       </div>
 
@@ -123,12 +138,26 @@ export default async function BusinessSelectionPage({
                     </div>
 
                     <div className="flex flex-col items-end gap-1.5">
-                      <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-1">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        {business.stats?.connectedNumbersCount || 1} Number Connected
-                      </span>
-                      <span className="text-[11px] text-slate-500">
-                        Isolated Workspace
+                      {business.stats?.connectionStatus === "connected" ? (
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-full px-2.5 py-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          {business.stats?.connectedNumbersCount ?? 1}{" "}
+                          {(business.stats?.connectedNumbersCount ?? 1) === 1 ? "Number Connected" : "Numbers Connected"}
+                        </span>
+                      ) : business.stats?.connectionStatus === "setup_required" ? (
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 rounded-full px-2.5 py-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                          Setup Required
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1.5 text-xs font-medium text-rose-400 bg-rose-500/10 border border-rose-500/20 rounded-full px-2.5 py-1">
+                          <span className="h-1.5 w-1.5 rounded-full bg-rose-400" />
+                          Not Connected
+                        </span>
+                      )}
+                      <span className="text-[11px] text-slate-500 flex items-center gap-1">
+                        <span className="h-1 w-1 rounded-full bg-emerald-500 inline-block" />
+                        Live DB Synced
                       </span>
                     </div>
                   </div>
@@ -143,7 +172,7 @@ export default async function BusinessSelectionPage({
 
                   {/* Business-Specific Quick Metrics */}
                   <div className="grid grid-cols-2 gap-3 my-6 pt-4 border-t border-slate-800">
-                    <div className="rounded-xl bg-slate-950/60 p-3 border border-slate-850">
+                    <div className="rounded-xl bg-slate-950/60 p-3 border border-slate-800">
                       <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1">
                         <Radio className="h-3 w-3 text-slate-500" />
                         Unread Enquiries
@@ -156,7 +185,7 @@ export default async function BusinessSelectionPage({
                       </div>
                     </div>
 
-                    <div className="rounded-xl bg-slate-950/60 p-3 border border-slate-850">
+                    <div className="rounded-xl bg-slate-950/60 p-3 border border-slate-800">
                       <div className="text-[11px] uppercase tracking-wider text-slate-400 font-semibold flex items-center gap-1">
                         <Clock className="h-3 w-3 text-slate-500" />
                         Pending Follow-ups

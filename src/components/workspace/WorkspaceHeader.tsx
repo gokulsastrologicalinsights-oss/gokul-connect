@@ -5,7 +5,9 @@ import Link from "next/link";
 import { Sparkles, HeartHandshake, ShieldCheck, User, Menu, X } from "lucide-react";
 import { Business, UserProfile } from "@/types/database";
 import { SwitchBusinessButton } from "./SwitchBusinessButton";
+import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { Badge } from "@/components/ui/badge";
+import { SignOutButton } from "@/components/auth/SignOutButton";
 
 interface WorkspaceHeaderProps {
   business: Business;
@@ -30,7 +32,7 @@ export function WorkspaceHeader({
           <button
             type="button"
             onClick={onToggleMobileMenu}
-            className="md:hidden rounded-lg p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus:outline-none"
+            className="md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center rounded-lg p-2 text-slate-600 hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
             aria-label="Toggle navigation menu"
           >
             {isMobileMenuOpen ? (
@@ -83,8 +85,11 @@ export function WorkspaceHeader({
         {/* The prominent Switch Business button */}
         <SwitchBusinessButton currentBusinessName={business.name} />
 
+        {/* Internal Notification Bell */}
+        <NotificationBell business={business} />
+
         {/* User Pill */}
-        <div className="flex items-center gap-2 pl-1">
+        <div className="flex items-center gap-2 pl-1 border-r border-slate-200 pr-2">
           <div className="h-8 w-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600">
             <User className="h-4 w-4" />
           </div>
@@ -95,6 +100,13 @@ export function WorkspaceHeader({
             <div className="text-[11px] text-slate-400">Platform Owner</div>
           </div>
         </div>
+
+        {/* Workspace Sign Out */}
+        <SignOutButton
+          variant="outline"
+          size="sm"
+          className="border-slate-300 bg-white text-slate-700 hover:bg-red-50 hover:text-red-700 hover:border-red-200 text-xs gap-1 h-8 px-2.5 shadow-none"
+        />
       </div>
     </header>
   );

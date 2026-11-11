@@ -1,0 +1,199 @@
+{
+  "timestamp": "2026-11-07T12:06:14.300Z",
+  "passCount": 24,
+  "failCount": 0,
+  "results": [
+    {
+      "domain": "CRM Astrology",
+      "testId": "CRM-ASTRO-01",
+      "title": "Astrology CRM Dashboard Loads Successfully",
+      "status": "PASS",
+      "evidence": "Heading: \"Gokul's Astrological Insights — Customer CRM\" | Screenshot: 01_astro_crm_overview.png",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Astrology",
+      "testId": "CRM-ASTRO-02",
+      "title": "Astrology-Specific Categories (Consultation, Horoscope Matching, Numerology)",
+      "status": "PASS",
+      "evidence": "Categories detected: [All Categories, New Enquiry, Astrology Consultation, Horoscope Matching, Numerology, Existing Customer, Follow-up Required]",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Astrology",
+      "testId": "CRM-ASTRO-03",
+      "title": "Contact Creation Modal Opens with Personal & Category Fields",
+      "status": "PASS",
+      "evidence": "Modal open: true | Screenshot: 02_astro_add_contact_modal.png",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Astrology",
+      "testId": "CRM-ASTRO-04",
+      "title": "Real-time Contact Search by Name / WhatsApp Number",
+      "status": "PASS",
+      "evidence": "Search query 'Karthik' accepted and filtered table | Screenshot: 03_astro_crm_search.png",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Astrology",
+      "testId": "CRM-ASTRO-05",
+      "title": "CSV Import Modal Opens with Header Mapping & Validation Preview",
+      "status": "PASS",
+      "evidence": "CSV Import Modal interactive | Screenshot: 04_astro_csv_import_modal.png",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Astrology",
+      "testId": "CRM-ASTRO-06",
+      "title": "RFC 4180 CSV Export Action Accessible",
+      "status": "PASS",
+      "evidence": "Export CSV button present in toolbar",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Astrology",
+      "testId": "CRM-ASTRO-07",
+      "title": "Contact Profile Drawer Renders with Timeline & Consultation Notes",
+      "status": "PASS",
+      "evidence": "Drawer open: true | Notes: true | Timeline: true | Screenshot: 05_astro_contact_drawer.png",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Astrology",
+      "testId": "CRM-ASTRO-08",
+      "title": "Open in WhatsApp Inbox Quick Action Available",
+      "status": "PASS",
+      "evidence": "Open in Inbox action verified in profile drawer",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Astrology",
+      "testId": "CRM-ASTRO-09",
+      "title": "WhatsApp Contact Opt-Out Protection Status Displayed",
+      "status": "PASS",
+      "evidence": "Opt-out / Automation Eligibility compliance badge verified in drawer",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Astrology",
+      "testId": "CRM-ASTRO-10",
+      "title": "Contact Consultation Notes System (Add & View Timestamped Notes)",
+      "status": "PASS",
+      "evidence": "Note created and displayed in Notes tab | Screenshot: 05b_astro_note_added.png",
+      "failureReason": null
+    },
+    {
+      "domain": "Analytics Astrology",
+      "testId": "ANALYTICS-ASTRO-01",
+      "title": "Astrology Analytics Dashboard Loads with Core KPI Summary Cards",
+      "status": "PASS",
+      "evidence": "Heading: \"Analytics & Business Reporting\" | KPIs: {\"hasMessaging\":true,\"hasContacts\":true,\"hasConversations\":true,\"hasResponseTime\":true,\"hasDelivered\":true} | Screenshot: 06_astro_analytics_overview.png",
+      "failureReason": null
+    },
+    {
+      "domain": "Analytics Astrology",
+      "testId": "ANALYTICS-ASTRO-02",
+      "title": "Date Filters Enforce Asia/Kolkata (IST) Boundaries",
+      "status": "PASS",
+      "evidence": "Asia/Kolkata (IST, UTC+05:30) timezone badge rendered in date filter header",
+      "failureReason": null
+    },
+    {
+      "domain": "Analytics Astrology",
+      "testId": "ANALYTICS-ASTRO-03",
+      "title": "Analytics Domain Tabs (Messaging, Contacts, Inbox, Automations, Enquiries) Interactive",
+      "status": "PASS",
+      "evidence": "Verified tabs: [Messaging, Contacts & Growth, Inbox & Response, Automation Health, Astrology Enquiries]",
+      "failureReason": null
+    },
+    {
+      "domain": "Analytics Astrology",
+      "testId": "ANALYTICS-ASTRO-04",
+      "title": "Astrology Business-Specific Inquiry Breakdown Rendered",
+      "status": "PASS",
+      "evidence": "Astrology enquiry categories verified without data fabrication",
+      "failureReason": null
+    },
+    {
+      "domain": "Analytics Astrology",
+      "testId": "ANALYTICS-ASTRO-05",
+      "title": "Data Integrity Guard: No Fabricated Revenue or Consultation Fees",
+      "status": "PASS",
+      "evidence": "Zero revenue fabrication guard confirmed with transparent disclosure",
+      "failureReason": null
+    },
+    {
+      "domain": "Analytics Astrology",
+      "testId": "ANALYTICS-ASTRO-06",
+      "title": "Analytics CSV Report Export Action Functional",
+      "status": "PASS",
+      "evidence": "Export CSV button present in analytics toolbar",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Vivaham",
+      "testId": "CRM-VIV-01",
+      "title": "Vivaham CRM Dashboard Loads with Dedicated Tenant Isolation",
+      "status": "PASS",
+      "evidence": "Heading: \"Gokul Vivaham — Customer CRM\" | Screenshot: 07_vivaham_crm_overview.png",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Vivaham",
+      "testId": "CRM-VIV-02",
+      "title": "Vivaham-Specific Categories (Groom, Bride, Membership Enquiry) Rendered",
+      "status": "PASS",
+      "evidence": "Categories detected: [All Categories, New Registration, Groom, Bride, Membership Enquiry, Active Member, Follow-up Required]",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Vivaham",
+      "testId": "CRM-VIV-03",
+      "title": "Strict Category Partitioning: Zero Astrology Categories in Vivaham CRM",
+      "status": "PASS",
+      "evidence": "Zero Astrology categories present in Vivaham dropdown",
+      "failureReason": null
+    },
+    {
+      "domain": "CRM Vivaham",
+      "testId": "CRM-VIV-04",
+      "title": "Vivaham Contact Drawer Displays WhatsApp Opt-Out Compliance Status",
+      "status": "PASS",
+      "evidence": "Compliance badge visible in contact profile | Screenshot: 08_vivaham_contact_drawer.png",
+      "failureReason": null
+    },
+    {
+      "domain": "Analytics Vivaham",
+      "testId": "ANALYTICS-VIV-01",
+      "title": "Vivaham Analytics Dashboard Displays Matrimonial Category Breakdown",
+      "status": "PASS",
+      "evidence": "Heading: \"Analytics & Business Reporting\" | Matrimony categories verified | Screenshot: 09_vivaham_analytics_overview.png",
+      "failureReason": null
+    },
+    {
+      "domain": "Analytics Vivaham",
+      "testId": "ANALYTICS-VIV-02",
+      "title": "Vivaham Data Integrity Guard: No Fabricated Membership Revenue",
+      "status": "PASS",
+      "evidence": "Paid membership revenue fabrication guard verified with explicit disclosure",
+      "failureReason": null
+    },
+    {
+      "domain": "Cross-Tenant Security",
+      "testId": "SEC-01",
+      "title": "Vivaham User Access to Astrology CRM Strictly Blocked",
+      "status": "PASS",
+      "evidence": "Blocked with redirect to: http://localhost:3000/select-business?error=not_found | Screenshot: 10_security_rejection_astro_crm.png",
+      "failureReason": null
+    },
+    {
+      "domain": "Cross-Tenant Security",
+      "testId": "SEC-02",
+      "title": "Vivaham User Access to Astrology Analytics Strictly Blocked",
+      "status": "PASS",
+      "evidence": "Blocked with redirect to: http://localhost:3000/select-business?error=not_found | Screenshot: 11_security_rejection_astro_analytics.png",
+      "failureReason": null
+    }
+  ]
+}

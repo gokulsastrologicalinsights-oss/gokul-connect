@@ -12,8 +12,8 @@ export const INITIAL_BUSINESSES: Business[] = [
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     stats: {
-      connectionStatus: "connected",
-      connectedNumbersCount: 1,
+      connectionStatus: "setup_required",
+      connectedNumbersCount: 0,
       unreadEnquiriesCount: 8,
       pendingRepliesCount: 3,
     },
@@ -29,8 +29,8 @@ export const INITIAL_BUSINESSES: Business[] = [
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     stats: {
-      connectionStatus: "connected",
-      connectedNumbersCount: 2,
+      connectionStatus: "setup_required",
+      connectedNumbersCount: 0,
       unreadEnquiriesCount: 15,
       pendingRepliesCount: 6,
     },

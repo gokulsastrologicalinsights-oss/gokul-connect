@@ -79,18 +79,19 @@ export default function ForgotPasswordPage() {
             ) : (
               <form onSubmit={handleReset} className="space-y-4">
                 {error && (
-                  <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
+                  <div role="alert" aria-live="polite" className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-400">
                     <AlertCircle className="h-4 w-4 shrink-0" />
                     <span>{error}</span>
                   </div>
                 )}
 
                 <div className="space-y-2">
-                  <label className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
+                  <label htmlFor="reset-email" className="text-xs font-medium text-slate-300 flex items-center gap-1.5">
                     <Mail className="h-3.5 w-3.5 text-slate-400" />
                     Authorized Email Address
                   </label>
                   <Input
+                    id="reset-email"
                     type="email"
                     placeholder="owner@gokulconnect.com"
                     value={email}

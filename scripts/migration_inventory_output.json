@@ -1,0 +1,491 @@
+{
+  "20261107_016_phase12_1_team_management_and_agent_assignment.sql": {
+    "createTables": [
+      "public.business_invitations",
+      "public.team_activity_logs",
+      "public.conversation_assignment_logs"
+    ],
+    "alterTables": [
+      "ALTER TABLE public.business_members",
+      "ALTER TABLE public.business_members",
+      "ALTER TABLE public.business_members",
+      "ALTER TABLE public.business_members",
+      "ALTER TABLE public.wa_conversations",
+      "ALTER TABLE public.business_invitations ENABLE ROW LEVEL SECURITY;",
+      "ALTER TABLE public.team_activity_logs ENABLE ROW LEVEL SECURITY;",
+      "ALTER TABLE public.conversation_assignment_logs ENABLE ROW LEVEL SECURITY;"
+    ],
+    "dropTables": [],
+    "functions": [
+      "public.guard_business_member_roles"
+    ],
+    "triggers": [
+      "DROP TRIGGER IF EXISTS trg_business_invitations_immutable_business_id ON public.business_invitations;",
+      "CREATE TRIGGER trg_business_invitations_immutable_business_id",
+      "DROP TRIGGER IF EXISTS trg_team_activity_logs_immutable_business_id ON public.team_activity_logs;",
+      "CREATE TRIGGER trg_team_activity_logs_immutable_business_id",
+      "DROP TRIGGER IF EXISTS trg_conv_assignment_logs_immutable_business_id ON public.conversation_assignment_logs;",
+      "CREATE TRIGGER trg_conv_assignment_logs_immutable_business_id",
+      "DROP TRIGGER IF EXISTS trg_business_members_guard_privileges ON public.business_members;",
+      "CREATE TRIGGER trg_business_members_guard_privileges"
+    ],
+    "policies": [
+      "DROP POLICY IF EXISTS \"Tenant isolation for business_invitations select\" ON public.business_invitations;",
+      "CREATE POLICY \"Tenant isolation for business_invitations select\"",
+      "DROP POLICY IF EXISTS \"Owners and admins can manage business_invitations\" ON public.business_invitations;",
+      "CREATE POLICY \"Owners and admins can manage business_invitations\"",
+      "DROP POLICY IF EXISTS \"Tenant isolation for team_activity_logs select\" ON public.team_activity_logs;",
+      "CREATE POLICY \"Tenant isolation for team_activity_logs select\"",
+      "DROP POLICY IF EXISTS \"Authorized members can insert team_activity_logs\" ON public.team_activity_logs;",
+      "CREATE POLICY \"Authorized members can insert team_activity_logs\"",
+      "DROP POLICY IF EXISTS \"Tenant isolation for conversation_assignment_logs select\" ON public.conversation_assignment_logs;",
+      "CREATE POLICY \"Tenant isolation for conversation_assignment_logs select\"",
+      "DROP POLICY IF EXISTS \"Authorized members can insert conversation_assignment_logs\" ON public.conversation_assignment_logs;",
+      "CREATE POLICY \"Authorized members can insert conversation_assignment_logs\""
+    ],
+    "indexes": [
+      "CREATE INDEX IF NOT EXISTS idx_wa_conversations_assigned_agent",
+      "idx_business_invitations_business ON public.business_invitations",
+      "idx_business_invitations_email ON public.business_invitations",
+      "idx_business_invitations_status ON public.business_invitations",
+      "CREATE INDEX IF NOT EXISTS idx_team_activity_logs_biz_created",
+      "CREATE INDEX IF NOT EXISTS idx_team_activity_logs_biz_type",
+      "CREATE INDEX IF NOT EXISTS idx_conv_assignment_logs_conv",
+      "CREATE INDEX IF NOT EXISTS idx_conv_assignment_logs_agent"
+    ],
+    "constraints": [],
+    "publications": [],
+    "grants": [
+      "REVOKE EXECUTE ON FUNCTION public.guard_business_member_roles() FROM PUBLIC;",
+      "GRANT EXECUTE ON FUNCTION public.guard_business_member_roles() TO authenticated, service_role;"
+    ],
+    "otherModsToExisting": []
+  },
+  "20261107_017_phase12_2_media_messaging.sql": {
+    "createTables": [
+      "public.wa_media_files"
+    ],
+    "alterTables": [
+      "ALTER TABLE public.wa_messages",
+      "ALTER TABLE public.wa_messages",
+      "ALTER TABLE public.wa_messages",
+      "ALTER TABLE public.wa_media_files ENABLE ROW LEVEL SECURITY;"
+    ],
+    "dropTables": [],
+    "functions": [
+      "public.populate_wa_message_media_fields"
+    ],
+    "triggers": [
+      "DROP TRIGGER IF EXISTS trg_wa_media_files_immutable_business_id ON public.wa_media_files;",
+      "CREATE TRIGGER trg_wa_media_files_immutable_business_id",
+      "DROP TRIGGER IF EXISTS trg_wa_messages_populate_media ON public.wa_messages;",
+      "CREATE TRIGGER trg_wa_messages_populate_media"
+    ],
+    "policies": [
+      "DROP POLICY IF EXISTS \"Tenant isolation for wa_media_files select\" ON public.wa_media_files;",
+      "CREATE POLICY \"Tenant isolation for wa_media_files select\"",
+      "DROP POLICY IF EXISTS \"Authorized members can insert wa_media_files\" ON public.wa_media_files;",
+      "CREATE POLICY \"Authorized members can insert wa_media_files\"",
+      "DROP POLICY IF EXISTS \"Authorized members can update wa_media_files\" ON public.wa_media_files;",
+      "CREATE POLICY \"Authorized members can update wa_media_files\""
+    ],
+    "indexes": [
+      "CREATE INDEX IF NOT EXISTS idx_wa_messages_media_type",
+      "CREATE INDEX IF NOT EXISTS idx_wa_messages_media_id",
+      "CREATE INDEX IF NOT EXISTS idx_wa_messages_download_status",
+      "CREATE INDEX IF NOT EXISTS idx_wa_media_files_biz_created",
+      "CREATE INDEX IF NOT EXISTS idx_wa_media_files_message",
+      "CREATE INDEX IF NOT EXISTS idx_wa_media_files_meta_id"
+    ],
+    "constraints": [],
+    "publications": [],
+    "grants": [],
+    "otherModsToExisting": []
+  },
+  "20261108_018_phase12_3_scheduled_messages.sql": {
+    "createTables": [
+      "public.wa_scheduled_messages"
+    ],
+    "alterTables": [
+      "ALTER TABLE public.wa_scheduled_messages ENABLE ROW LEVEL SECURITY;"
+    ],
+    "dropTables": [],
+    "functions": [
+      "public.claim_next_scheduled_messages",
+      "public.reclaim_stuck_scheduled_messages",
+      "public.sync_scheduled_message_delivery_status"
+    ],
+    "triggers": [
+      "DROP TRIGGER IF EXISTS trg_wa_scheduled_messages_immutable_business_id ON public.wa_scheduled_messages;",
+      "CREATE TRIGGER trg_wa_scheduled_messages_immutable_business_id",
+      "DROP TRIGGER IF EXISTS trg_wa_messages_sync_scheduled_status ON public.wa_messages;",
+      "CREATE TRIGGER trg_wa_messages_sync_scheduled_status"
+    ],
+    "policies": [
+      "DROP POLICY IF EXISTS \"Tenant isolation for wa_scheduled_messages select\" ON public.wa_scheduled_messages;",
+      "CREATE POLICY \"Tenant isolation for wa_scheduled_messages select\"",
+      "DROP POLICY IF EXISTS \"Authorized members can insert wa_scheduled_messages\" ON public.wa_scheduled_messages;",
+      "CREATE POLICY \"Authorized members can insert wa_scheduled_messages\"",
+      "DROP POLICY IF EXISTS \"Authorized members can update wa_scheduled_messages\" ON public.wa_scheduled_messages;",
+      "CREATE POLICY \"Authorized members can update wa_scheduled_messages\"",
+      "DROP POLICY IF EXISTS \"Authorized members can delete wa_scheduled_messages\" ON public.wa_scheduled_messages;",
+      "CREATE POLICY \"Authorized members can delete wa_scheduled_messages\""
+    ],
+    "indexes": [
+      "CREATE INDEX IF NOT EXISTS idx_wa_scheduled_messages_claim",
+      "CREATE INDEX IF NOT EXISTS idx_wa_scheduled_messages_biz_status",
+      "CREATE INDEX IF NOT EXISTS idx_wa_scheduled_messages_biz_type",
+      "CREATE INDEX IF NOT EXISTS idx_wa_scheduled_messages_meta_msg",
+      "CREATE INDEX IF NOT EXISTS idx_wa_scheduled_messages_msg_id",
+      "CREATE INDEX IF NOT EXISTS idx_wa_scheduled_messages_phone"
+    ],
+    "constraints": [],
+    "publications": [],
+    "grants": [
+      "REVOKE ALL ON FUNCTION public.claim_next_scheduled_messages(INTEGER, TEXT) FROM PUBLIC;",
+      "REVOKE EXECUTE ON FUNCTION public.claim_next_scheduled_messages(INTEGER, TEXT) FROM anon;",
+      "REVOKE EXECUTE ON FUNCTION public.claim_next_scheduled_messages(INTEGER, TEXT) FROM authenticated;",
+      "GRANT EXECUTE ON FUNCTION public.claim_next_scheduled_messages(INTEGER, TEXT) TO service_role;",
+      "REVOKE ALL ON FUNCTION public.reclaim_stuck_scheduled_messages(INTEGER) FROM PUBLIC;",
+      "REVOKE EXECUTE ON FUNCTION public.reclaim_stuck_scheduled_messages(INTEGER) FROM anon;",
+      "REVOKE EXECUTE ON FUNCTION public.reclaim_stuck_scheduled_messages(INTEGER) FROM authenticated;",
+      "GRANT EXECUTE ON FUNCTION public.reclaim_stuck_scheduled_messages(INTEGER) TO service_role;"
+    ],
+    "otherModsToExisting": []
+  },
+  "20261108_019_phase12_4_campaign_management.sql": {
+    "createTables": [
+      "public.wa_campaigns",
+      "public.wa_campaign_recipients"
+    ],
+    "alterTables": [
+      "ALTER TABLE public.wa_contacts",
+      "ALTER TABLE public.wa_campaigns ENABLE ROW LEVEL SECURITY;",
+      "ALTER TABLE public.wa_campaign_recipients ENABLE ROW LEVEL SECURITY;"
+    ],
+    "dropTables": [],
+    "functions": [
+      "public.claim_next_campaign_recipients",
+      "public.reclaim_stuck_campaign_recipients",
+      "public.sync_campaign_recipient_delivery_status"
+    ],
+    "triggers": [
+      "DROP TRIGGER IF EXISTS trg_wa_campaigns_immutable_business_id ON public.wa_campaigns;",
+      "CREATE TRIGGER trg_wa_campaigns_immutable_business_id",
+      "DROP TRIGGER IF EXISTS trg_wa_campaign_recipients_immutable_business_id ON public.wa_campaign_recipients;",
+      "CREATE TRIGGER trg_wa_campaign_recipients_immutable_business_id",
+      "DROP TRIGGER IF EXISTS trg_wa_messages_sync_campaign_status ON public.wa_messages;",
+      "CREATE TRIGGER trg_wa_messages_sync_campaign_status"
+    ],
+    "policies": [
+      "DROP POLICY IF EXISTS \"Tenant isolation for wa_campaigns select\" ON public.wa_campaigns;",
+      "CREATE POLICY \"Tenant isolation for wa_campaigns select\"",
+      "DROP POLICY IF EXISTS \"Authorized members can insert wa_campaigns\" ON public.wa_campaigns;",
+      "CREATE POLICY \"Authorized members can insert wa_campaigns\"",
+      "DROP POLICY IF EXISTS \"Authorized members can update wa_campaigns\" ON public.wa_campaigns;",
+      "CREATE POLICY \"Authorized members can update wa_campaigns\"",
+      "DROP POLICY IF EXISTS \"Authorized members can delete wa_campaigns\" ON public.wa_campaigns;",
+      "CREATE POLICY \"Authorized members can delete wa_campaigns\"",
+      "DROP POLICY IF EXISTS \"Tenant isolation for wa_campaign_recipients select\" ON public.wa_campaign_recipients;",
+      "CREATE POLICY \"Tenant isolation for wa_campaign_recipients select\"",
+      "DROP POLICY IF EXISTS \"Authorized members can insert wa_campaign_recipients\" ON public.wa_campaign_recipients;",
+      "CREATE POLICY \"Authorized members can insert wa_campaign_recipients\"",
+      "DROP POLICY IF EXISTS \"Authorized members can update wa_campaign_recipients\" ON public.wa_campaign_recipients;",
+      "CREATE POLICY \"Authorized members can update wa_campaign_recipients\"",
+      "DROP POLICY IF EXISTS \"Authorized members can delete wa_campaign_recipients\" ON public.wa_campaign_recipients;",
+      "CREATE POLICY \"Authorized members can delete wa_campaign_recipients\""
+    ],
+    "indexes": [
+      "CREATE INDEX IF NOT EXISTS idx_wa_contacts_consent",
+      "CREATE INDEX IF NOT EXISTS idx_wa_contacts_blocked",
+      "CREATE INDEX IF NOT EXISTS idx_wa_campaigns_biz_status",
+      "CREATE INDEX IF NOT EXISTS idx_wa_campaigns_scheduled",
+      "CREATE INDEX IF NOT EXISTS idx_wa_campaign_recipients_claim",
+      "CREATE INDEX IF NOT EXISTS idx_wa_campaign_recipients_biz_phone",
+      "CREATE INDEX IF NOT EXISTS idx_wa_campaign_recipients_meta_msg",
+      "CREATE INDEX IF NOT EXISTS idx_wa_campaign_recipients_msg_id"
+    ],
+    "constraints": [],
+    "publications": [],
+    "grants": [
+      "REVOKE ALL ON FUNCTION public.claim_next_campaign_recipients(INTEGER, TEXT) FROM PUBLIC;",
+      "REVOKE EXECUTE ON FUNCTION public.claim_next_campaign_recipients(INTEGER, TEXT) FROM anon;",
+      "REVOKE EXECUTE ON FUNCTION public.claim_next_campaign_recipients(INTEGER, TEXT) FROM authenticated;",
+      "GRANT EXECUTE ON FUNCTION public.claim_next_campaign_recipients(INTEGER, TEXT) TO service_role;",
+      "REVOKE ALL ON FUNCTION public.reclaim_stuck_campaign_recipients(INTEGER) FROM PUBLIC;",
+      "REVOKE EXECUTE ON FUNCTION public.reclaim_stuck_campaign_recipients(INTEGER) FROM anon;",
+      "REVOKE EXECUTE ON FUNCTION public.reclaim_stuck_campaign_recipients(INTEGER) FROM authenticated;",
+      "GRANT EXECUTE ON FUNCTION public.reclaim_stuck_campaign_recipients(INTEGER) TO service_role;"
+    ],
+    "otherModsToExisting": []
+  },
+  "20261108_020_phase12_5_crm_lifecycle_and_followups.sql": {
+    "createTables": [
+      "public.crm_lifecycle_stages",
+      "public.contact_lifecycle_history",
+      "public.crm_follow_ups",
+      "public.crm_follow_up_reminders"
+    ],
+    "alterTables": [
+      "ALTER TABLE public.wa_contacts",
+      "ALTER TABLE public.wa_contacts",
+      "ALTER TABLE public.crm_lifecycle_stages ENABLE ROW LEVEL SECURITY;",
+      "ALTER TABLE public.contact_lifecycle_history ENABLE ROW LEVEL SECURITY;",
+      "ALTER TABLE public.crm_follow_ups ENABLE ROW LEVEL SECURITY;",
+      "ALTER TABLE public.crm_follow_up_reminders ENABLE ROW LEVEL SECURITY;"
+    ],
+    "dropTables": [],
+    "functions": [
+      "public.sync_contact_next_follow_up"
+    ],
+    "triggers": [
+      "DROP TRIGGER IF EXISTS trg_crm_lifecycle_stages_immutable_business_id ON public.crm_lifecycle_stages;",
+      "CREATE TRIGGER trg_crm_lifecycle_stages_immutable_business_id",
+      "DROP TRIGGER IF EXISTS trg_contact_lifecycle_history_immutable_business_id ON public.contact_lifecycle_history;",
+      "CREATE TRIGGER trg_contact_lifecycle_history_immutable_business_id",
+      "DROP TRIGGER IF EXISTS trg_crm_follow_ups_immutable_business_id ON public.crm_follow_ups;",
+      "CREATE TRIGGER trg_crm_follow_ups_immutable_business_id",
+      "DROP TRIGGER IF EXISTS trg_crm_follow_ups_sync_next ON public.crm_follow_ups;",
+      "CREATE TRIGGER trg_crm_follow_ups_sync_next",
+      "DROP TRIGGER IF EXISTS trg_crm_follow_up_reminders_immutable_business_id ON public.crm_follow_up_reminders;",
+      "CREATE TRIGGER trg_crm_follow_up_reminders_immutable_business_id"
+    ],
+    "policies": [
+      "DROP POLICY IF EXISTS \"Tenant isolation for crm_lifecycle_stages select\" ON public.crm_lifecycle_stages;",
+      "CREATE POLICY \"Tenant isolation for crm_lifecycle_stages select\"",
+      "DROP POLICY IF EXISTS \"Authorized members can insert crm_lifecycle_stages\" ON public.crm_lifecycle_stages;",
+      "CREATE POLICY \"Authorized members can insert crm_lifecycle_stages\"",
+      "DROP POLICY IF EXISTS \"Authorized members can update crm_lifecycle_stages\" ON public.crm_lifecycle_stages;",
+      "CREATE POLICY \"Authorized members can update crm_lifecycle_stages\"",
+      "DROP POLICY IF EXISTS \"Authorized members can delete crm_lifecycle_stages\" ON public.crm_lifecycle_stages;",
+      "CREATE POLICY \"Authorized members can delete crm_lifecycle_stages\"",
+      "DROP POLICY IF EXISTS \"Tenant isolation for contact_lifecycle_history select\" ON public.contact_lifecycle_history;",
+      "CREATE POLICY \"Tenant isolation for contact_lifecycle_history select\"",
+      "DROP POLICY IF EXISTS \"Authorized members can insert contact_lifecycle_history\" ON public.contact_lifecycle_history;",
+      "CREATE POLICY \"Authorized members can insert contact_lifecycle_history\"",
+      "DROP POLICY IF EXISTS \"Tenant isolation for crm_follow_ups select\" ON public.crm_follow_ups;",
+      "CREATE POLICY \"Tenant isolation for crm_follow_ups select\"",
+      "DROP POLICY IF EXISTS \"Authorized members can insert crm_follow_ups\" ON public.crm_follow_ups;",
+      "CREATE POLICY \"Authorized members can insert crm_follow_ups\"",
+      "DROP POLICY IF EXISTS \"Authorized members can update crm_follow_ups\" ON public.crm_follow_ups;",
+      "CREATE POLICY \"Authorized members can update crm_follow_ups\"",
+      "DROP POLICY IF EXISTS \"Authorized members can delete crm_follow_ups\" ON public.crm_follow_ups;",
+      "CREATE POLICY \"Authorized members can delete crm_follow_ups\"",
+      "DROP POLICY IF EXISTS \"Tenant isolation for crm_follow_up_reminders select\" ON public.crm_follow_up_reminders;",
+      "CREATE POLICY \"Tenant isolation for crm_follow_up_reminders select\"",
+      "DROP POLICY IF EXISTS \"Authorized members can insert crm_follow_up_reminders\" ON public.crm_follow_up_reminders;",
+      "CREATE POLICY \"Authorized members can insert crm_follow_up_reminders\"",
+      "DROP POLICY IF EXISTS \"Authorized members can update crm_follow_up_reminders\" ON public.crm_follow_up_reminders;",
+      "CREATE POLICY \"Authorized members can update crm_follow_up_reminders\"",
+      "DROP POLICY IF EXISTS \"Authorized members can delete crm_follow_up_reminders\" ON public.crm_follow_up_reminders;",
+      "CREATE POLICY \"Authorized members can delete crm_follow_up_reminders\""
+    ],
+    "indexes": [
+      "CREATE INDEX IF NOT EXISTS idx_crm_lifecycle_stages_sort",
+      "CREATE INDEX IF NOT EXISTS idx_wa_contacts_lifecycle_stage",
+      "CREATE INDEX IF NOT EXISTS idx_wa_contacts_next_follow_up",
+      "CREATE INDEX IF NOT EXISTS idx_contact_lifecycle_history_contact",
+      "CREATE INDEX IF NOT EXISTS idx_crm_follow_ups_due",
+      "CREATE INDEX IF NOT EXISTS idx_crm_follow_ups_assigned",
+      "CREATE INDEX IF NOT EXISTS idx_crm_follow_ups_contact",
+      "CREATE INDEX IF NOT EXISTS idx_crm_follow_up_reminders_user"
+    ],
+    "constraints": [],
+    "publications": [],
+    "grants": [],
+    "otherModsToExisting": []
+  },
+  "20261109_021_phase12_6_notification_center_and_durable_reminders.sql": {
+    "createTables": [
+      "public.user_notification_preferences"
+    ],
+    "alterTables": [
+      "ALTER TABLE public.crm_follow_up_reminders",
+      "ALTER TABLE public.crm_follow_up_reminders",
+      "ALTER TABLE public.crm_follow_up_reminders",
+      "ALTER TABLE public.crm_follow_up_reminders",
+      "ALTER TABLE public.crm_follow_up_reminders",
+      "ALTER TABLE public.user_notification_preferences ENABLE ROW LEVEL SECURITY;"
+    ],
+    "dropTables": [],
+    "functions": [
+      "public.claim_next_reminder_jobs",
+      "public.reclaim_stuck_reminder_jobs"
+    ],
+    "triggers": [
+      "DROP TRIGGER IF EXISTS trg_user_notification_pref_immutable_business_id ON public.user_notification_preferences;",
+      "CREATE TRIGGER trg_user_notification_pref_immutable_business_id"
+    ],
+    "policies": [
+      "DROP POLICY IF EXISTS \"Tenant and user isolation for user_notification_preferences select\" ON public.user_notification_preferences;",
+      "CREATE POLICY \"Tenant and user isolation for user_notification_preferences select\"",
+      "DROP POLICY IF EXISTS \"User can insert own notification preferences\" ON public.user_notification_preferences;",
+      "CREATE POLICY \"User can insert own notification preferences\"",
+      "DROP POLICY IF EXISTS \"User can update own notification preferences\" ON public.user_notification_preferences;",
+      "CREATE POLICY \"User can update own notification preferences\"",
+      "DROP POLICY IF EXISTS \"User can delete own notification preferences\" ON public.user_notification_preferences;",
+      "CREATE POLICY \"User can delete own notification preferences\"",
+      "DROP POLICY IF EXISTS \"Tenant isolation for crm_follow_up_reminders select\" ON public.crm_follow_up_reminders;",
+      "CREATE POLICY \"Tenant isolation for crm_follow_up_reminders select\""
+    ],
+    "indexes": [
+      "CREATE INDEX IF NOT EXISTS idx_crm_reminders_active_user",
+      "CREATE INDEX IF NOT EXISTS idx_crm_reminders_processing_jobs",
+      "CREATE INDEX IF NOT EXISTS idx_crm_reminders_pending_jobs",
+      "CREATE INDEX IF NOT EXISTS idx_user_notification_pref_lookup"
+    ],
+    "constraints": [],
+    "publications": [],
+    "grants": [
+      "REVOKE ALL ON FUNCTION public.claim_next_reminder_jobs(INTEGER, TEXT) FROM PUBLIC;",
+      "REVOKE EXECUTE ON FUNCTION public.claim_next_reminder_jobs(INTEGER, TEXT) FROM anon;",
+      "REVOKE EXECUTE ON FUNCTION public.claim_next_reminder_jobs(INTEGER, TEXT) FROM authenticated;",
+      "GRANT EXECUTE ON FUNCTION public.claim_next_reminder_jobs(INTEGER, TEXT) TO service_role;",
+      "REVOKE ALL ON FUNCTION public.reclaim_stuck_reminder_jobs(INTEGER) FROM PUBLIC;",
+      "REVOKE EXECUTE ON FUNCTION public.reclaim_stuck_reminder_jobs(INTEGER) FROM anon;",
+      "REVOKE EXECUTE ON FUNCTION public.reclaim_stuck_reminder_jobs(INTEGER) FROM authenticated;",
+      "GRANT EXECUTE ON FUNCTION public.reclaim_stuck_reminder_jobs(INTEGER) TO service_role;"
+    ],
+    "otherModsToExisting": []
+  },
+  "20261109_022_phase12_7_visual_flows_and_realtime.sql": {
+    "createTables": [
+      "public.wa_visual_flows"
+    ],
+    "alterTables": [
+      "ALTER TABLE public.wa_visual_flows ENABLE ROW LEVEL SECURITY;"
+    ],
+    "dropTables": [],
+    "functions": [],
+    "triggers": [
+      "DROP TRIGGER IF EXISTS trg_wa_visual_flows_immutable_business_id ON public.wa_visual_flows;",
+      "CREATE TRIGGER trg_wa_visual_flows_immutable_business_id"
+    ],
+    "policies": [
+      "DROP POLICY IF EXISTS \"Tenant isolation for wa_visual_flows select\" ON public.wa_visual_flows;",
+      "CREATE POLICY \"Tenant isolation for wa_visual_flows select\"",
+      "DROP POLICY IF EXISTS \"Authorized members can insert wa_visual_flows\" ON public.wa_visual_flows;",
+      "CREATE POLICY \"Authorized members can insert wa_visual_flows\"",
+      "DROP POLICY IF EXISTS \"Authorized members can update wa_visual_flows\" ON public.wa_visual_flows;",
+      "CREATE POLICY \"Authorized members can update wa_visual_flows\"",
+      "DROP POLICY IF EXISTS \"Authorized members can delete wa_visual_flows\" ON public.wa_visual_flows;",
+      "CREATE POLICY \"Authorized members can delete wa_visual_flows\""
+    ],
+    "indexes": [
+      "CREATE INDEX IF NOT EXISTS idx_wa_visual_flows_business_id"
+    ],
+    "constraints": [],
+    "publications": [
+      "ALTER PUBLICATION supabase_realtime ADD TABLE public.wa_messages;",
+      "ALTER PUBLICATION supabase_realtime ADD TABLE public.wa_conversations;",
+      "ALTER PUBLICATION supabase_realtime ADD TABLE public.wa_visual_flows;"
+    ],
+    "grants": [],
+    "otherModsToExisting": []
+  },
+  "20261109_023_phase2_operational_reliability.sql": {
+    "createTables": [
+      "public.worker_execution_runs"
+    ],
+    "alterTables": [
+      "ALTER TABLE public.worker_execution_runs ENABLE ROW LEVEL SECURITY;",
+      "ALTER TABLE public.wa_processing_jobs",
+      "ALTER TABLE public.wa_processing_jobs",
+      "ALTER TABLE public.wa_scheduled_messages",
+      "ALTER TABLE public.wa_scheduled_messages",
+      "ALTER TABLE public.wa_campaign_recipients",
+      "ALTER TABLE public.wa_campaign_recipients",
+      "ALTER TABLE public.crm_follow_up_reminders",
+      "ALTER TABLE public.crm_follow_up_reminders"
+    ],
+    "dropTables": [],
+    "functions": [
+      "public.get_worker_health_metrics",
+      "public.reclaim_stuck_queue_jobs",
+      "public.retry_queue_job"
+    ],
+    "triggers": [
+      "DROP TRIGGER IF EXISTS trg_worker_execution_runs_immutable_business_id ON public.worker_execution_runs;",
+      "CREATE TRIGGER trg_worker_execution_runs_immutable_business_id"
+    ],
+    "policies": [
+      "DROP POLICY IF EXISTS \"service_role_worker_execution_runs\" ON public.worker_execution_runs;",
+      "CREATE POLICY \"service_role_worker_execution_runs\"",
+      "DROP POLICY IF EXISTS \"tenant_worker_execution_runs_select\" ON public.worker_execution_runs;",
+      "CREATE POLICY \"tenant_worker_execution_runs_select\""
+    ],
+    "indexes": [
+      "CREATE INDEX IF NOT EXISTS idx_worker_execution_runs_worker_time",
+      "CREATE INDEX IF NOT EXISTS idx_worker_execution_runs_biz_time",
+      "CREATE INDEX IF NOT EXISTS idx_worker_execution_runs_status",
+      "CREATE INDEX IF NOT EXISTS idx_wa_processing_jobs_biz_stuck",
+      "CREATE INDEX IF NOT EXISTS idx_wa_processing_jobs_biz_retrying",
+      "CREATE INDEX IF NOT EXISTS idx_wa_scheduled_messages_biz_stuck",
+      "CREATE INDEX IF NOT EXISTS idx_wa_scheduled_messages_biz_retrying",
+      "CREATE INDEX IF NOT EXISTS idx_wa_campaign_recipients_biz_stuck",
+      "CREATE INDEX IF NOT EXISTS idx_crm_reminders_biz_stuck"
+    ],
+    "constraints": [],
+    "publications": [],
+    "grants": [
+      "REVOKE EXECUTE ON FUNCTION public.get_worker_health_metrics(UUID) FROM PUBLIC;",
+      "GRANT EXECUTE ON FUNCTION public.get_worker_health_metrics(UUID) TO service_role;",
+      "GRANT EXECUTE ON FUNCTION public.get_worker_health_metrics(UUID) TO authenticated;",
+      "REVOKE EXECUTE ON FUNCTION public.reclaim_stuck_queue_jobs(INT, UUID) FROM PUBLIC;",
+      "GRANT EXECUTE ON FUNCTION public.reclaim_stuck_queue_jobs(INT, UUID) TO service_role;",
+      "REVOKE EXECUTE ON FUNCTION public.retry_queue_job(UUID, TEXT, UUID) FROM PUBLIC;",
+      "GRANT EXECUTE ON FUNCTION public.retry_queue_job(UUID, TEXT, UUID) TO service_role;",
+      "GRANT EXECUTE ON FUNCTION public.retry_queue_job(UUID, TEXT, UUID) TO authenticated;"
+    ],
+    "otherModsToExisting": []
+  },
+  "20261109_024_phase_p3_2_labels_and_cron_locks.sql": {
+    "createTables": [
+      "public.cron_locks"
+    ],
+    "alterTables": [
+      "ALTER TABLE public.wa_conversations",
+      "ALTER TABLE public.cron_locks ENABLE ROW LEVEL SECURITY;"
+    ],
+    "dropTables": [],
+    "functions": [
+      "public.acquire_cron_lock",
+      "public.renew_cron_lock",
+      "public.release_cron_lock",
+      "public.get_cron_lock_status"
+    ],
+    "triggers": [
+      "DROP TRIGGER IF EXISTS trg_cron_locks_immutable_business_id ON public.cron_locks;",
+      "CREATE TRIGGER trg_cron_locks_immutable_business_id"
+    ],
+    "policies": [
+      "DROP POLICY IF EXISTS \"service_role_cron_locks\" ON public.cron_locks;",
+      "CREATE POLICY \"service_role_cron_locks\"",
+      "DROP POLICY IF EXISTS \"tenant_cron_locks_select\" ON public.cron_locks;",
+      "CREATE POLICY \"tenant_cron_locks_select\""
+    ],
+    "indexes": [
+      "CREATE INDEX IF NOT EXISTS idx_wa_conversations_labels",
+      "CREATE INDEX IF NOT EXISTS idx_cron_locks_expires_at",
+      "CREATE INDEX IF NOT EXISTS idx_cron_locks_cron_name",
+      "CREATE INDEX IF NOT EXISTS idx_cron_locks_business_id"
+    ],
+    "constraints": [],
+    "publications": [],
+    "grants": [
+      "REVOKE EXECUTE ON FUNCTION public.acquire_cron_lock(TEXT, TEXT, TEXT, INT, UUID, JSONB) FROM PUBLIC;",
+      "GRANT EXECUTE ON FUNCTION public.acquire_cron_lock(TEXT, TEXT, TEXT, INT, UUID, JSONB) TO service_role;",
+      "GRANT EXECUTE ON FUNCTION public.acquire_cron_lock(TEXT, TEXT, TEXT, INT, UUID, JSONB) TO authenticated;",
+      "REVOKE EXECUTE ON FUNCTION public.renew_cron_lock(TEXT, TEXT, INT) FROM PUBLIC;",
+      "GRANT EXECUTE ON FUNCTION public.renew_cron_lock(TEXT, TEXT, INT) TO service_role;",
+      "GRANT EXECUTE ON FUNCTION public.renew_cron_lock(TEXT, TEXT, INT) TO authenticated;",
+      "REVOKE EXECUTE ON FUNCTION public.release_cron_lock(TEXT, TEXT) FROM PUBLIC;",
+      "GRANT EXECUTE ON FUNCTION public.release_cron_lock(TEXT, TEXT) TO service_role;",
+      "GRANT EXECUTE ON FUNCTION public.release_cron_lock(TEXT, TEXT) TO authenticated;",
+      "REVOKE EXECUTE ON FUNCTION public.get_cron_lock_status(TEXT) FROM PUBLIC;",
+      "GRANT EXECUTE ON FUNCTION public.get_cron_lock_status(TEXT) TO service_role;",
+      "GRANT EXECUTE ON FUNCTION public.get_cron_lock_status(TEXT) TO authenticated;"
+    ],
+    "otherModsToExisting": []
+  }
+}

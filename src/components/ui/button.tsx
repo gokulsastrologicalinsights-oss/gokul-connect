@@ -15,7 +15,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       default: "bg-slate-900 text-white hover:bg-slate-800 shadow-sm",
       secondary: "bg-slate-100 text-slate-900 hover:bg-slate-200",
       outline: "border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 shadow-sm",
-      ghost: "hover:bg-slate-100 text-slate-750",
+      ghost: "hover:bg-slate-100 text-slate-700",
       destructive: "bg-red-600 text-white hover:bg-red-700 shadow-sm",
       astrology: "bg-purple-600 text-white hover:bg-purple-700 shadow-sm",
       vivaham: "bg-rose-600 text-white hover:bg-rose-700 shadow-sm",
