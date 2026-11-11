@@ -91,7 +91,9 @@ export function ConnectionsManagerClient({
     display_name: "",
     phone_number: "",
     description: "",
+    access_token: "",
   });
+  const [showEditToken, setShowEditToken] = useState(false);
 
   // Copy helper
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -208,7 +210,16 @@ export function ConnectionsManagerClient({
     if (!activeConnection) return;
 
     setIsSubmitting(true);
-    const res = await updateConnectionAction(business.slug, activeConnection.id, editForm);
+    const payload: { display_name: string; phone_number: string; description: string; access_token?: string } = {
+      display_name: editForm.display_name,
+      phone_number: editForm.phone_number,
+      description: editForm.description,
+    };
+    if (editForm.access_token.trim()) {
+      payload.access_token = editForm.access_token.trim();
+    }
+
+    const res = await updateConnectionAction(business.slug, activeConnection.id, payload);
     setIsSubmitting(false);
 
     if (res.success && res.data) {
@@ -216,7 +227,7 @@ export function ConnectionsManagerClient({
       setIsEditModalOpen(false);
       setNotification({
         type: "success",
-        message: `Connection details updated for "${res.data.display_name}".`,
+        message: `Connection details updated for "${res.data.display_name}".${editForm.access_token.trim() ? " Access token rotated successfully." : ""}`,
       });
       setTimeout(() => setNotification(null), 4000);
     } else {
@@ -585,7 +596,9 @@ export function ConnectionsManagerClient({
                             display_name: conn.display_name,
                             phone_number: conn.phone_number,
                             description: conn.description || "",
+                            access_token: "",
                           });
+                          setShowEditToken(false);
                           setIsEditModalOpen(true);
                         }}
                         className="text-xs h-8 gap-1 text-slate-700"
@@ -1007,6 +1020,41 @@ export function ConnectionsManagerClient({
                   onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
                   className="w-full rounded-lg border border-slate-300 bg-white p-2.5 text-xs text-slate-700 focus:outline-none"
                 />
+              </div>
+
+              {/* Rotate / Update Access Token */}
+              <div className="space-y-1.5 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <label htmlFor="edit-conn-access-token" className="text-xs font-medium text-slate-700">
+                    Rotate / Update Meta Access Token <span className="text-slate-400 font-normal">(Optional)</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setShowEditToken(!showEditToken)}
+                    className="text-[11px] text-slate-500 hover:text-slate-700 flex items-center gap-1"
+                  >
+                    {showEditToken ? (
+                      <>
+                        <EyeOff className="h-3 w-3" /> Hide
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="h-3 w-3" /> Show
+                      </>
+                    )}
+                  </button>
+                </div>
+                <Input
+                  id="edit-conn-access-token"
+                  type={showEditToken ? "text" : "password"}
+                  placeholder="Leave empty to keep current token, or paste new EAAB... token"
+                  value={editForm.access_token}
+                  onChange={(e) => setEditForm({ ...editForm, access_token: e.target.value })}
+                  className="text-xs font-mono"
+                />
+                <p className="text-[11px] text-slate-400">
+                  Provide a new permanent System User token to update the encrypted database vault if your previous token has expired.
+                </p>
               </div>
 
               <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-slate-100">

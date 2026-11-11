@@ -99,6 +99,7 @@ export interface UpdateWhatsAppConnectionInput {
   phone_number?: string;
   description?: string;
   is_enabled?: boolean;
+  access_token?: string; // Optional: Rotate or replace expired access token
 }
 
 // ==========================================

@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { LogOut } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
-import { clearWorkspaceTenantCache } from "@/components/workspace/SwitchBusinessButton";
+import { clearWorkspaceTenantCache } from "@/lib/workspace/tenant-cache";
 
 interface SignOutButtonProps {
   className?: string;

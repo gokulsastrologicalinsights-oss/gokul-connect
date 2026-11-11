@@ -320,6 +320,10 @@ export function updateConnection(
     conn.is_enabled = Boolean(updates.is_enabled);
   }
 
+  if (updates.access_token && updates.access_token.trim().length > 0) {
+    serverTokenVault.set(conn.credential_ref, encryptSecret(updates.access_token.trim()));
+  }
+
   conn.updated_at = new Date().toISOString();
   return toSafeConnection(conn);
 }
@@ -643,6 +647,49 @@ export async function updateConnectionDb(
 
   const { createServerSupabaseClient } = await import("@/lib/supabase/server");
   const supabase = await createServerSupabaseClient();
+
+  if (updates.access_token && updates.access_token.trim().length > 0) {
+    const cleanToken = updates.access_token.trim();
+    const encryptedPayload = encryptSecret(cleanToken);
+
+    const { data: existingCred } = await supabase
+      .from("wa_credentials")
+      .select("id")
+      .eq("connection_id", connectionId)
+      .maybeSingle();
+
+    if (existingCred) {
+      const { error: credErr } = await supabase
+        .from("wa_credentials")
+        .update({
+          key_version: encryptedPayload.key_version,
+          iv: encryptedPayload.iv,
+          auth_tag: encryptedPayload.auth_tag,
+          ciphertext: encryptedPayload.ciphertext,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", existingCred.id);
+
+      if (credErr) {
+        throw new Error(`Failed to update encrypted credential: ${credErr.message}`);
+      }
+    } else {
+      const { error: credErr } = await supabase
+        .from("wa_credentials")
+        .insert({
+          connection_id: connectionId,
+          business_id: businessId,
+          key_version: encryptedPayload.key_version,
+          iv: encryptedPayload.iv,
+          auth_tag: encryptedPayload.auth_tag,
+          ciphertext: encryptedPayload.ciphertext,
+        });
+
+      if (credErr) {
+        throw new Error(`Failed to store encrypted credential: ${credErr.message}`);
+      }
+    }
+  }
 
   const { data: updated, error } = await supabase
     .from("wa_connections")

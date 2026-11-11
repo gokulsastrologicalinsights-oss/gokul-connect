@@ -63,6 +63,7 @@ export const UpdateWhatsAppConnectionSchema = z.object({
   phone_number: z.string().trim().min(5).max(30).optional(),
   description: z.string().trim().max(500).optional(),
   is_enabled: z.boolean().optional(),
+  access_token: z.string().trim().optional(),
 });
 
 export type ValidatedUpdateWhatsAppConnection = z.infer<typeof UpdateWhatsAppConnectionSchema>;
