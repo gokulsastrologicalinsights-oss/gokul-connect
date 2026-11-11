@@ -9,12 +9,14 @@ import { X } from "lucide-react";
 interface WorkspaceLayoutClientProps {
   business: Business;
   user: UserProfile;
+  logoUrl?: string | null;
   children: React.ReactNode;
 }
 
 export function WorkspaceLayoutClient({
   business,
   user,
+  logoUrl = null,
   children,
 }: WorkspaceLayoutClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -25,6 +27,7 @@ export function WorkspaceLayoutClient({
       <WorkspaceHeader
         business={business}
         user={user}
+        logoUrl={logoUrl}
         onToggleMobileMenu={() => setMobileMenuOpen((prev) => !prev)}
         isMobileMenuOpen={mobileMenuOpen}
       />

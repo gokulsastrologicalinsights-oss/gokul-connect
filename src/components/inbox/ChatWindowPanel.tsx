@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import Link from "next/link";
 import {
   BusinessMember,
+  CannedResponse,
   SupportedMediaType,
   TeamMemberWithProfile,
   WhatsAppConversation,
@@ -44,10 +45,20 @@ import {
   Mic,
   RotateCcw,
   Maximize2,
+  Plus,
+  Zap,
 } from "lucide-react";
 import { extractTemplateVariables, replaceVariables } from "@/lib/templates/validation";
 import { getDefaultBusinessTemplates } from "@/lib/templates/default-templates";
 import { MEDIA_SIZE_LIMITS } from "@/lib/media/storage";
+import { getLabelStyle, getSuggestedLabelsForBusiness } from "@/lib/inbox/labels";
+import {
+  applySlashCommandReplacement,
+  extractSlashCommandQuery,
+  filterCannedResponses,
+  SlashCommandMatch,
+} from "@/lib/inbox/slash-commands";
+import { CannedResponsesModal } from "./CannedResponsesModal";
 
 interface StagedAttachment {
   file: File;
@@ -105,6 +116,26 @@ interface ChatWindowPanelProps {
   isSendingMessage?: boolean;
   teamMembers?: TeamMemberWithProfile[];
   currentMembership?: BusinessMember;
+  availableLabels?: string[];
+  onUpdateLabels?: (
+    conversationId: string,
+    labels: string[]
+  ) => Promise<{ success: boolean; error?: string }>;
+  cannedResponses?: CannedResponse[];
+  onCreateCannedResponse?: (input: {
+    shortcut: string;
+    title: string;
+    content: string;
+    category: string;
+  }) => Promise<{ success: boolean; error?: string }>;
+  onUpdateCannedResponse?: (input: {
+    responseId: string;
+    shortcut: string;
+    title: string;
+    content: string;
+    category: string;
+  }) => Promise<{ success: boolean; error?: string }>;
+  onDeleteCannedResponse?: (responseId: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 function formatBytes(bytes: number, decimals = 1): string {
@@ -151,6 +182,12 @@ export function ChatWindowPanel({
   isSendingMessage = false,
   teamMembers = [],
   currentMembership,
+  availableLabels = [],
+  onUpdateLabels,
+  cannedResponses = [],
+  onCreateCannedResponse,
+  onUpdateCannedResponse,
+  onDeleteCannedResponse,
 }: ChatWindowPanelProps) {
   const [copiedPhone, setCopiedPhone] = useState(false);
   const [draftText, setDraftText] = useState("");
@@ -171,9 +208,73 @@ export function ChatWindowPanel({
   const [retryingMessageId, setRetryingMessageId] = useState<string | null>(null);
   const [lightboxMedia, setLightboxMedia] = useState<{ url: string; title: string; type: "image" | "video" } | null>(null);
 
+  // Labels Picker state
+  const [showLabelPicker, setShowLabelPicker] = useState(false);
+  const [newLabelInput, setNewLabelInput] = useState("");
+  const [updatingLabels, setUpdatingLabels] = useState(false);
+
+  // Quick Replies / Canned Responses (/shortcut) state
+  const [slashMatch, setSlashMatch] = useState<SlashCommandMatch | null>(null);
+  const [activeSlashIndex, setActiveSlashIndex] = useState(0);
+  const [showCannedModal, setShowCannedModal] = useState(false);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const labelPickerRef = useRef<HTMLDivElement>(null);
+
+  // Close label picker on outside click or Escape
+  useEffect(() => {
+    if (!showLabelPicker) return;
+    const handleOutside = (e: MouseEvent) => {
+      if (labelPickerRef.current && !labelPickerRef.current.contains(e.target as Node)) {
+        setShowLabelPicker(false);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setShowLabelPicker(false);
+    };
+    document.addEventListener("mousedown", handleOutside);
+    window.addEventListener("keydown", handleEsc);
+    return () => {
+      document.removeEventListener("mousedown", handleOutside);
+      window.removeEventListener("keydown", handleEsc);
+    };
+  }, [showLabelPicker]);
+
+  // Reset slash command popover & label picker when switching conversation
+  useEffect(() => {
+    setSlashMatch(null);
+    setActiveSlashIndex(0);
+    setShowLabelPicker(false);
+    setNewLabelInput("");
+  }, [conversation?.id]);
+
+  // Combined label options (presets + workspace labels + current conversation labels)
+  const labelOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    const combined = [
+      ...getSuggestedLabelsForBusiness(businessSlug),
+      ...availableLabels,
+      ...(conversation?.labels || []),
+    ];
+    for (const lbl of combined) {
+      const trimmed = lbl.trim();
+      if (!trimmed) continue;
+      const key = trimmed.toLowerCase();
+      if (!map.has(key)) map.set(key, trimmed);
+    }
+    const q = newLabelInput.trim().toLowerCase();
+    const all = Array.from(map.values());
+    if (!q) return all;
+    return all.filter((l) => l.toLowerCase().includes(q));
+  }, [businessSlug, availableLabels, conversation?.labels, newLabelInput]);
+
+  // Filtered quick replies for `/` slash command popover
+  const slashFilteredResponses = useMemo(() => {
+    if (!slashMatch) return [];
+    return filterCannedResponses(cannedResponses, slashMatch.query).slice(0, 8);
+  }, [cannedResponses, slashMatch]);
 
   // Auto-scroll to bottom of messages
   useEffect(() => {
@@ -273,20 +374,124 @@ export function ChatWindowPanel({
     }
   };
 
-  // Keyboard shortcut: Enter to send, Shift + Enter for new line
+  // Insert a canned response snippet into composer (from slash popover or modal)
+  const insertCannedSnippet = (
+    snippet: CannedResponse,
+    activeMatch?: SlashCommandMatch | null
+  ) => {
+    let nextValue = draftText;
+    let cursorPos = draftText.length;
+
+    if (activeMatch) {
+      const replaced = applySlashCommandReplacement(draftText, activeMatch, snippet.content);
+      nextValue = replaced.nextText;
+      cursorPos = replaced.nextCursorPos;
+    } else {
+      const prefix = draftText.length > 0 && !/\s$/.test(draftText) ? " " : "";
+      nextValue = `${draftText}${prefix}${snippet.content}`;
+      cursorPos = nextValue.length;
+    }
+
+    setDraftText(nextValue);
+    setSlashMatch(null);
+    setActiveSlashIndex(0);
+    if (composerError) setComposerError(null);
+
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (el) {
+        el.focus();
+        el.setSelectionRange(cursorPos, cursorPos);
+        el.style.height = "auto";
+        el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+      }
+    });
+  };
+
+  // Toggle or add/remove conversation label
+  const handleToggleLabel = async (labelToToggle: string) => {
+    if (!conversation || !onUpdateLabels || isViewer || updatingLabels) return;
+    const clean = labelToToggle.trim().slice(0, 40);
+    if (!clean) return;
+
+    const current = conversation.labels || [];
+    const exists = current.some((l) => l.toLowerCase() === clean.toLowerCase());
+    const nextLabels = exists
+      ? current.filter((l) => l.toLowerCase() !== clean.toLowerCase())
+      : [...current, clean];
+
+    setUpdatingLabels(true);
+    try {
+      const res = await onUpdateLabels(conversation.id, nextLabels);
+      if (!res.success) {
+        setComposerError(res.error || "Failed to update conversation labels.");
+      }
+    } catch (err: any) {
+      setComposerError(err?.message || "Failed to update conversation labels.");
+    } finally {
+      setUpdatingLabels(false);
+    }
+  };
+
+  const handleAddCustomLabel = async () => {
+    const clean = newLabelInput.trim().slice(0, 40);
+    if (!clean || !conversation || !onUpdateLabels || isViewer || updatingLabels) return;
+    const current = conversation.labels || [];
+    if (!current.some((l) => l.toLowerCase() === clean.toLowerCase())) {
+      await handleToggleLabel(clean);
+    }
+    setNewLabelInput("");
+  };
+
+  // Keyboard shortcut: Slash menu navigation OR Enter to send, Shift + Enter for new line
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashMatch) {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setSlashMatch(null);
+        return;
+      }
+      if (slashFilteredResponses.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setActiveSlashIndex((prev) => (prev + 1) % slashFilteredResponses.length);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setActiveSlashIndex(
+            (prev) => (prev - 1 + slashFilteredResponses.length) % slashFilteredResponses.length
+          );
+          return;
+        }
+        if ((e.key === "Enter" && !e.shiftKey) || e.key === "Tab") {
+          e.preventDefault();
+          const chosen = slashFilteredResponses[activeSlashIndex] || slashFilteredResponses[0];
+          if (chosen) {
+            insertCannedSnippet(chosen, slashMatch);
+          }
+          return;
+        }
+      }
+    }
+
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
 
-  // Auto-resize textarea
+  // Auto-resize textarea & detect /shortcut slash command
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setDraftText(e.target.value);
+    const val = e.target.value;
+    setDraftText(val);
     if (composerError) setComposerError(null);
 
     const target = e.target;
+    const match = extractSlashCommandQuery(val, target.selectionStart ?? val.length);
+    setSlashMatch(match);
+    setActiveSlashIndex(0);
+
     target.style.height = "auto";
     target.style.height = `${Math.min(target.scrollHeight, 120)}px`;
   };
@@ -799,19 +1004,127 @@ export function ChatWindowPanel({
             )}
           </div>
 
-          {conversation.labels && conversation.labels.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <Tag className="w-3.5 h-3.5 text-slate-400" />
-              {conversation.labels.map((l) => (
-                <span
-                  key={l}
-                  className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-slate-100 text-slate-700"
-                >
-                  {l}
-                </span>
-              ))}
-            </div>
-          )}
+          {/* Conversation Labels & Interactive Picker Popover */}
+          <div className="relative flex flex-wrap items-center gap-1.5" ref={labelPickerRef}>
+            <Tag className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+            {conversation.labels && conversation.labels.length > 0 ? (
+              conversation.labels.map((l) => {
+                const style = getLabelStyle(l);
+                return (
+                  <span
+                    key={l}
+                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${style.bg} ${style.text} ${style.border}`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${style.dot}`} />
+                    <span>{l}</span>
+                    {!isViewer && onUpdateLabels && (
+                      <button
+                        type="button"
+                        onClick={() => handleToggleLabel(l)}
+                        disabled={updatingLabels}
+                        className="hover:opacity-75 ml-0.5 rounded-full focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-indigo-500"
+                        title={`Remove label "${l}"`}
+                        aria-label={`Remove label ${l}`}
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    )}
+                  </span>
+                );
+              })
+            ) : (
+              <span className="text-[11px] text-slate-400">No labels</span>
+            )}
+
+            {!isViewer && onUpdateLabels && (
+              <button
+                type="button"
+                onClick={() => setShowLabelPicker((prev) => !prev)}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border border-dashed border-slate-300 bg-slate-50 hover:bg-indigo-50 hover:border-indigo-300 text-slate-600 hover:text-indigo-700 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                aria-label="Manage conversation labels"
+                aria-expanded={showLabelPicker}
+                title="Add or remove conversation labels"
+              >
+                <Plus className="w-3 h-3" />
+                <span>Label</span>
+              </button>
+            )}
+
+            {showLabelPicker && !isViewer && onUpdateLabels && (
+              <div
+                role="dialog"
+                aria-label="Conversation labels picker"
+                className="absolute left-0 top-full mt-2 w-72 rounded-xl border border-slate-200 bg-white shadow-xl z-40 p-3 space-y-2.5"
+              >
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700">
+                    Conversation Labels
+                  </span>
+                  {updatingLabels && (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                  )}
+                </div>
+
+                {/* Custom / Search Label Input */}
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={newLabelInput}
+                    onChange={(e) => setNewLabelInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleAddCustomLabel();
+                      }
+                    }}
+                    maxLength={40}
+                    placeholder="Filter or create new label..."
+                    aria-label="Filter or create new label"
+                    className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                  {newLabelInput.trim() && (
+                    <button
+                      type="button"
+                      onClick={handleAddCustomLabel}
+                      disabled={updatingLabels}
+                      className="px-2.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-semibold"
+                    >
+                      Add
+                    </button>
+                  )}
+                </div>
+
+                {/* Label Toggle Options */}
+                <div className="max-h-48 overflow-y-auto space-y-1 pr-0.5">
+                  {labelOptions.map((lbl) => {
+                    const isSelected = (conversation.labels || []).some(
+                      (existing) => existing.toLowerCase() === lbl.toLowerCase()
+                    );
+                    const style = getLabelStyle(lbl);
+                    return (
+                      <button
+                        key={lbl}
+                        type="button"
+                        disabled={updatingLabels}
+                        onClick={() => handleToggleLabel(lbl)}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs transition-colors ${
+                          isSelected
+                            ? "bg-indigo-50 text-indigo-900 font-semibold"
+                            : "text-slate-700 hover:bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${style.dot}`} />
+                          <span className="truncate">{lbl}</span>
+                        </div>
+                        {isSelected && <Check className="w-3.5 h-3.5 text-indigo-600 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* WhatsApp 24-Hour Customer Care Window Badge */}
           {windowStatus.isOpen ? (
@@ -1323,6 +1636,98 @@ export function ChatWindowPanel({
           </button>
 
           <div className="flex-1 relative">
+            {/* Slash-Command Quick Replies Popover */}
+            {slashMatch && !isViewer && windowStatus.isOpen && (
+              <div
+                role="listbox"
+                aria-label="Quick replies matching slash shortcut"
+                className="absolute bottom-full left-0 right-0 mb-2 rounded-xl border border-slate-200 bg-white shadow-2xl z-40 overflow-hidden"
+              >
+                <div className="px-3 py-2 border-b border-slate-100 bg-slate-50 flex items-center justify-between text-[11px]">
+                  <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                    <Zap className="w-3.5 h-3.5 text-amber-500" />
+                    <span>
+                      Quick Replies{" "}
+                      {slashMatch.query ? (
+                        <code className="text-indigo-600 font-mono">/{slashMatch.query}</code>
+                      ) : (
+                        "(Type to filter)"
+                      )}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSlashMatch(null);
+                      setShowCannedModal(true);
+                    }}
+                    className="text-indigo-600 hover:text-indigo-800 font-semibold"
+                  >
+                    Manage Snippets
+                  </button>
+                </div>
+
+                {slashFilteredResponses.length === 0 ? (
+                  <div className="p-3 text-xs text-slate-500 flex items-center justify-between gap-2">
+                    <span>
+                      No quick reply matching{" "}
+                      <code className="font-mono text-indigo-600">/{slashMatch.query}</code>.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSlashMatch(null);
+                        setShowCannedModal(true);
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-semibold text-[11px]"
+                    >
+                      + Create Snippet
+                    </button>
+                  </div>
+                ) : (
+                  <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+                    {slashFilteredResponses.map((snippet, idx) => {
+                      const isActive = idx === activeSlashIndex;
+                      return (
+                        <button
+                          key={snippet.id}
+                          type="button"
+                          role="option"
+                          aria-selected={isActive}
+                          onMouseEnter={() => setActiveSlashIndex(idx)}
+                          onClick={() => insertCannedSnippet(snippet, slashMatch)}
+                          className={`w-full text-left px-3 py-2 transition-colors flex flex-col gap-0.5 ${
+                            isActive ? "bg-indigo-50" : "hover:bg-slate-50"
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 font-mono text-[10px] font-bold">
+                                /{snippet.shortcut}
+                              </span>
+                              <span className="text-xs font-semibold text-slate-900 truncate">
+                                {snippet.title}
+                              </span>
+                            </div>
+                            <span className="text-[10px] text-slate-400 capitalize shrink-0">
+                              {snippet.category}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 line-clamp-1">
+                            {snippet.content}
+                          </p>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="px-3 py-1.5 bg-slate-50 border-t border-slate-100 text-[10px] text-slate-400 flex items-center justify-between">
+                  <span>↑↓ Navigate · Enter or Tab to Insert · Esc to Close</span>
+                </div>
+              </div>
+            )}
+
             <textarea
               id="chat-composer-textarea"
               ref={textareaRef}
@@ -1337,7 +1742,7 @@ export function ChatWindowPanel({
                   ? "Read-only access: Viewers cannot send messages."
                   : !windowStatus.isOpen
                   ? "24-hour window closed. Click 'Send Approved Template' above to re-engage..."
-                  : "Type a WhatsApp message (Enter to send, Shift + Enter for new line)..."
+                  : "Type a WhatsApp message or / for quick replies (Enter to send)..."
               }
               className={`w-full text-xs rounded-xl px-3.5 py-2.5 text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:bg-white resize-none max-h-32 transition-all ${
                 isViewer || !windowStatus.isOpen
@@ -1348,6 +1753,24 @@ export function ChatWindowPanel({
               }`}
             />
           </div>
+
+          {/* Quick Replies / Canned Responses Button */}
+          <button
+            type="button"
+            onClick={() => setShowCannedModal(true)}
+            disabled={isViewer}
+            className={`p-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+              isViewer ? "cursor-not-allowed opacity-50" : ""
+            }`}
+            title={
+              isViewer
+                ? "Viewers cannot insert or manage quick replies."
+                : "Quick Replies & Canned Responses (/shortcut)"
+            }
+            aria-label="Quick Replies and Canned Responses"
+          >
+            <Zap className="w-4 h-4 text-amber-500" />
+          </button>
 
           {/* Quick Template Button */}
           <button
@@ -1840,6 +2263,34 @@ export function ChatWindowPanel({
           </div>
         </div>
       )}
+
+      {/* Quick Replies & Canned Responses Modal */}
+      <CannedResponsesModal
+        isOpen={showCannedModal}
+        onClose={() => setShowCannedModal(false)}
+        responses={cannedResponses}
+        isViewer={isViewer}
+        canInsert={!isViewer && windowStatus.isOpen}
+        onInsertSnippet={(snippet) => insertCannedSnippet(snippet)}
+        onCreateResponse={async (input) => {
+          if (!onCreateCannedResponse) {
+            return { success: false, error: "Quick reply creation is not wired." };
+          }
+          return onCreateCannedResponse(input);
+        }}
+        onUpdateResponse={async (input) => {
+          if (!onUpdateCannedResponse) {
+            return { success: false, error: "Quick reply updates are not wired." };
+          }
+          return onUpdateCannedResponse(input);
+        }}
+        onDeleteResponse={async (responseId) => {
+          if (!onDeleteCannedResponse) {
+            return { success: false, error: "Quick reply deletion is not wired." };
+          }
+          return onDeleteCannedResponse(responseId);
+        }}
+      />
     </div>
   );
 }

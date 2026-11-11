@@ -186,6 +186,7 @@ export const UpdateBusinessSettingsSchema = z.object({
   display_name: z.string().trim().min(1).max(255).optional(),
   business_info: z.string().trim().max(1000).optional(),
   logo_placeholder: z.string().trim().max(100).optional(),
+  logo_url: z.string().trim().max(1000).nullable().optional(),
   timezone: z.string().trim().max(100).optional(),
   default_language: z.string().trim().max(10).optional(),
   notification_preferences: z
@@ -202,6 +203,76 @@ export const UpdateBusinessSettingsSchema = z.object({
       opt_out_keywords: z.string().trim().max(500).optional(),
     })
     .optional(),
+});
+
+export const UploadBusinessLogoSchema = z.object({
+  businessSlug: z.string().trim().min(1).max(100),
+  filename: z.string().trim().min(1, "Filename is required.").max(255),
+  mimeType: z.enum(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]),
+  fileSize: z
+    .number()
+    .int()
+    .positive("Logo file cannot be empty.")
+    .max(2 * 1024 * 1024, "Logo file size cannot exceed 2 MB."),
+  base64Data: z.string().min(1, "Logo file data is required."),
+});
+
+export const UpdateConversationLabelsSchema = z.object({
+  businessSlug: z.string().trim().min(1).max(100),
+  conversationId: z.string().trim().min(1).max(100),
+  labels: z.array(z.string().trim().min(1).max(40)).max(20, "Maximum 20 labels per conversation."),
+});
+
+export const StartNewConversationSchema = z.object({
+  businessSlug: z.string().trim().min(1).max(100),
+  phoneNumber: z
+    .string()
+    .trim()
+    .min(7, "Phone number must include country code and at least 7 digits.")
+    .max(30, "Phone number is too long.")
+    .regex(/^\+?[0-9\s\-()]+$/, "Phone number contains invalid characters."),
+  displayName: z.string().trim().min(1, "Customer name is required.").max(255),
+  category: z.string().trim().max(100).optional().nullable(),
+  connectionId: z.string().trim().max(100).optional(),
+  templateId: z.string().trim().max(255).optional(),
+  templateName: z.string().trim().max(255).optional(),
+  templateLanguage: z.string().trim().max(20).optional(),
+  templateVariables: z.record(z.string(), z.string()).optional(),
+  initialMessage: z.string().trim().max(4096).optional(),
+});
+
+export const CreateCannedResponseSchema = z.object({
+  businessSlug: z.string().trim().min(1).max(100),
+  shortcut: z
+    .string()
+    .trim()
+    .min(1, "Shortcut is required.")
+    .max(64, "Shortcut cannot exceed 64 characters."),
+  title: z
+    .string()
+    .trim()
+    .min(1, "Title is required.")
+    .max(120, "Title cannot exceed 120 characters."),
+  content: z
+    .string()
+    .trim()
+    .min(1, "Snippet content cannot be empty.")
+    .max(4096, "Snippet content cannot exceed 4096 characters."),
+  category: z.string().trim().min(1).max(50).default("general"),
+});
+
+export const UpdateCannedResponseSchema = z.object({
+  businessSlug: z.string().trim().min(1).max(100),
+  responseId: z.string().trim().min(1).max(100),
+  shortcut: z.string().trim().min(1).max(64).optional(),
+  title: z.string().trim().min(1).max(120).optional(),
+  content: z.string().trim().min(1).max(4096).optional(),
+  category: z.string().trim().min(1).max(50).optional(),
+});
+
+export const DeleteCannedResponseSchema = z.object({
+  businessSlug: z.string().trim().min(1).max(100),
+  responseId: z.string().trim().min(1).max(100),
 });
 
 /**

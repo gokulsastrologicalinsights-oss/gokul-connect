@@ -222,8 +222,22 @@ export async function getAuthorizedBusinesses(): Promise<Business[]> {
             pendingCount = convCount || 0;
           }
 
+          // 4. Optional custom logo URL from business_settings (graceful on pre-025 schemas)
+          let logoUrl: string | null = null;
+          try {
+            const { data: settRow } = await supabase
+              .from("business_settings")
+              .select("logo_url")
+              .eq("business_id", b.id)
+              .maybeSingle();
+            logoUrl = settRow?.logo_url ?? null;
+          } catch {
+            logoUrl = null;
+          }
+
           return {
             ...b,
+            logo_url: logoUrl,
             stats: {
               connectionStatus,
               connectedNumbersCount: connectedConns.length,
@@ -234,6 +248,7 @@ export async function getAuthorizedBusinesses(): Promise<Business[]> {
         } catch {
           return {
             ...b,
+            logo_url: null,
             stats: {
               connectionStatus: "setup_required",
               connectedNumbersCount: 0,
@@ -248,6 +263,18 @@ export async function getAuthorizedBusinesses(): Promise<Business[]> {
     return businessesWithStats as Business[];
   }
 
-  // Local development fallback
-  return INITIAL_BUSINESSES;
+  // Local development fallback (include any updated in-memory logo_url)
+  try {
+    const { getBusinessSettings } = await import("@/lib/connections/store");
+    return INITIAL_BUSINESSES.map((b) => {
+      try {
+        const sett = getBusinessSettings(b.id);
+        return { ...b, logo_url: sett.logo_url ?? null };
+      } catch {
+        return b;
+      }
+    });
+  } catch {
+    return INITIAL_BUSINESSES;
+  }
 }

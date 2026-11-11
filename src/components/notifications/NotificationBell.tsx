@@ -18,16 +18,21 @@ import {
 } from "lucide-react";
 import { Business, CrmFollowUpReminder, NotificationStats } from "@/types/database";
 import { formatKolkataTimestamp } from "@/lib/notifications/date-utils";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 interface NotificationBellProps {
   business: Business;
+  userId?: string;
 }
 
-export function NotificationBell({ business }: NotificationBellProps) {
+export function NotificationBell({ business, userId }: NotificationBellProps) {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [notifications, setNotifications] = useState<CrmFollowUpReminder[]>([]);
+  const [realtimeStatus, setRealtimeStatus] = useState<"connected" | "connecting" | "polling">(
+    isSupabaseConfigured() ? "connecting" : "polling"
+  );
   const [stats, setStats] = useState<NotificationStats>({
     total: 0,
     unreadCount: 0,
@@ -40,27 +45,34 @@ export function NotificationBell({ business }: NotificationBellProps) {
   const currentBusinessIdRef = useRef<string>(business.id);
 
   // Fetch recent notifications and unread stats
-  const fetchNotifications = useCallback(async () => {
-    try {
-      setLoading(true);
-      const res = await fetch(
-        `/api/workspace/${business.slug}/notifications?tab=unread&limit=5`
-      );
-      if (!res.ok) return;
+  const fetchNotifications = useCallback(
+    async (silent = false) => {
+      const requestBusinessId = business.id;
+      try {
+        if (!silent) setLoading(true);
+        const res = await fetch(
+          `/api/workspace/${business.slug}/notifications?tab=unread&limit=5`
+        );
+        if (!res.ok) return;
 
-      const data = await res.json();
-      if (data.success) {
-        setNotifications(data.notifications || []);
-        if (data.stats) {
-          setStats(data.stats);
+        const data = await res.json();
+        // Cross-tenant race protection: ignore stale response after business switch
+        if (currentBusinessIdRef.current !== requestBusinessId) return;
+
+        if (data.success) {
+          setNotifications(data.notifications || []);
+          if (data.stats) {
+            setStats(data.stats);
+          }
         }
+      } catch {
+        // offline / transient
+      } finally {
+        if (!silent) setLoading(false);
       }
-    } catch {
-      // offline / transient
-    } finally {
-      setLoading(false);
-    }
-  }, [business.slug]);
+    },
+    [business.id, business.slug]
+  );
 
   // Strict tenant boundary: Clear state whenever business changes
   useEffect(() => {
@@ -76,8 +88,89 @@ export function NotificationBell({ business }: NotificationBellProps) {
       });
       setIsOpen(false);
     }
-    fetchNotifications();
+    fetchNotifications(false);
   }, [business.id, fetchNotifications]);
+
+  // Live Supabase Realtime subscription on crm_follow_up_reminders + local event sync
+  useEffect(() => {
+    const handleLocalSync = (e: any) => {
+      if (!e?.detail?.businessId || e.detail.businessId === business.id) {
+        fetchNotifications(true);
+      }
+    };
+
+    if (typeof window !== "undefined") {
+      window.addEventListener("workspace:notifications-sync", handleLocalSync);
+    }
+
+    if (!isSupabaseConfigured()) {
+      setRealtimeStatus("polling");
+      return () => {
+        if (typeof window !== "undefined") {
+          window.removeEventListener("workspace:notifications-sync", handleLocalSync);
+        }
+      };
+    }
+
+    let supabase: any = null;
+    try {
+      supabase = createClient();
+    } catch {
+      setRealtimeStatus("polling");
+      return () => {
+        if (typeof window !== "undefined") {
+          window.removeEventListener("workspace:notifications-sync", handleLocalSync);
+        }
+      };
+    }
+
+    setRealtimeStatus("connecting");
+    const channel = supabase
+      .channel(`notifications:${business.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "crm_follow_up_reminders",
+          filter: `business_id=eq.${business.id}`,
+        },
+        (payload: any) => {
+          const targetUserId = payload?.new?.user_id || payload?.old?.user_id;
+          if (userId && targetUserId && targetUserId !== userId) {
+            return;
+          }
+          fetchNotifications(true);
+        }
+      )
+      .subscribe((status: string) => {
+        if (status === "SUBSCRIBED") {
+          setRealtimeStatus("connected");
+        } else if (status === "CLOSED" || status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+          setRealtimeStatus("polling");
+        }
+      });
+
+    return () => {
+      if (typeof window !== "undefined") {
+        window.removeEventListener("workspace:notifications-sync", handleLocalSync);
+      }
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  }, [business.id, userId, fetchNotifications]);
+
+  // Resilient fallback heartbeat (60s when Realtime subscribed, 15s when fallback polling)
+  useEffect(() => {
+    const intervalMs = realtimeStatus === "connected" ? 60000 : 15000;
+    const id = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      fetchNotifications(true);
+    }, intervalMs);
+
+    return () => clearInterval(id);
+  }, [realtimeStatus, fetchNotifications]);
 
   // Close dropdown on click outside
   useEffect(() => {
@@ -120,6 +213,13 @@ export function NotificationBell({ business }: NotificationBellProps) {
           ...prev,
           unreadCount: Math.max(0, prev.unreadCount - 1),
         }));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("workspace:notifications-sync", {
+              detail: { businessId: business.id },
+            })
+          );
+        }
       }
     } catch {
       // silent
@@ -141,6 +241,13 @@ export function NotificationBell({ business }: NotificationBellProps) {
           ...prev,
           unreadCount: 0,
         }));
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(
+            new CustomEvent("workspace:notifications-sync", {
+              detail: { businessId: business.id },
+            })
+          );
+        }
       }
     } catch {
       // silent
@@ -217,6 +324,23 @@ export function NotificationBell({ business }: NotificationBellProps) {
               {stats.unreadCount > 0 && (
                 <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-semibold text-indigo-700">
                   {stats.unreadCount} new
+                </span>
+              )}
+              {realtimeStatus === "connected" ? (
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
+                  title="Supabase Realtime Push Active"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live
+                </span>
+              ) : (
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200"
+                  title="Background Sync Active"
+                >
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  Sync
                 </span>
               )}
             </div>

@@ -120,6 +120,7 @@ const INITIAL_SETTINGS: BusinessSettings[] = [
     display_name: "Gokul's Astrological Insights",
     business_info: "Vedic & KP Astrology consultations, Horoscope matching, and Astro Remedies.",
     logo_placeholder: "GA",
+    logo_url: null,
     timezone: "Asia/Kolkata",
     default_language: "ta,en",
     notification_preferences: {
@@ -141,6 +142,7 @@ const INITIAL_SETTINGS: BusinessSettings[] = [
     display_name: "Gokul Vivaham",
     business_info: "Premium Tamil Matrimony platform, profile matching, and verified matrimonial introductions.",
     logo_placeholder: "GV",
+    logo_url: null,
     timezone: "Asia/Kolkata",
     default_language: "ta,en",
     notification_preferences: {
@@ -456,6 +458,7 @@ export function updateBusinessSettings(
   if (updates.display_name !== undefined) settings.display_name = updates.display_name;
   if (updates.business_info !== undefined) settings.business_info = updates.business_info;
   if (updates.logo_placeholder !== undefined) settings.logo_placeholder = updates.logo_placeholder;
+  if (updates.logo_url !== undefined) settings.logo_url = updates.logo_url;
   if (updates.timezone !== undefined) settings.timezone = updates.timezone;
   if (updates.default_language !== undefined) settings.default_language = updates.default_language;
   if (updates.notification_preferences !== undefined) {
@@ -917,6 +920,7 @@ export async function getBusinessSettingsDb(businessId: string): Promise<Busines
     display_name: row.display_name,
     business_info: row.business_info || "",
     logo_placeholder: row.logo_placeholder || "",
+    logo_url: row.logo_url ?? null,
     timezone: row.timezone,
     default_language: row.default_language,
     notification_preferences: {
@@ -952,6 +956,7 @@ export async function updateBusinessSettingsDb(
   if (updates.display_name !== undefined) patch.display_name = updates.display_name;
   if (updates.business_info !== undefined) patch.business_info = updates.business_info;
   if (updates.logo_placeholder !== undefined) patch.logo_placeholder = updates.logo_placeholder;
+  if (updates.logo_url !== undefined) patch.logo_url = updates.logo_url;
   if (updates.timezone !== undefined) patch.timezone = updates.timezone;
   if (updates.default_language !== undefined) patch.default_language = updates.default_language;
 

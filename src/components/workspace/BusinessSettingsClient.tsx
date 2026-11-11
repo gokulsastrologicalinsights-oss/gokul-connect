@@ -1,7 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
-import { updateBusinessSettingsAction } from "@/app/actions/connections";
+import React, { useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import {
+  removeBusinessLogoAction,
+  updateBusinessSettingsAction,
+  uploadBusinessLogoAction,
+} from "@/app/actions/connections";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,13 +21,24 @@ import {
   Image as ImageIcon,
   Key,
   Layers,
+  Loader2,
   Phone,
   RefreshCw,
   Save,
   Shield,
   Smartphone,
+  Trash2,
+  Upload,
   X,
 } from "lucide-react";
+
+const ALLOWED_LOGO_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/svg+xml",
+]);
+const MAX_LOGO_SIZE = 2 * 1024 * 1024; // 2 MB
 
 interface BusinessSettingsClientProps {
   business: Business;
@@ -35,19 +51,146 @@ export function BusinessSettingsClient({
   initialSettings,
   connections,
 }: BusinessSettingsClientProps) {
+  const router = useRouter();
   const isAstrology = business.slug === "astrology";
   const brandColor = isAstrology ? "purple" : "rose";
 
   const [settings, setSettings] = useState<BusinessSettings>(initialSettings);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingLogo, setIsUploadingLogo] = useState(false);
+  const [logoRenderError, setLogoRenderError] = useState(false);
   const [notification, setNotification] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
+  const emitLogoSync = (logoUrl: string | null) => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("workspace:logo-updated", {
+          detail: { businessId: business.id, logoUrl },
+        })
+      );
+    }
+  };
+
+  async function handleLogoFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+
+    const mimeType = (file.type || "").toLowerCase();
+    if (!ALLOWED_LOGO_TYPES.has(mimeType)) {
+      setNotification({
+        type: "error",
+        message: "Unsupported logo format. Please select a PNG, SVG, JPEG, or WebP image.",
+      });
+      return;
+    }
+
+    if (file.size <= 0 || file.size > MAX_LOGO_SIZE) {
+      setNotification({
+        type: "error",
+        message: "Logo file size must be between 1 byte and 2 MB.",
+      });
+      return;
+    }
+
+    setIsUploadingLogo(true);
+    setNotification(null);
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const result = String(reader.result || "");
+        const base64Data = result.split(",")[1] || "";
+        const res = await uploadBusinessLogoAction({
+          businessSlug: business.slug,
+          filename: file.name,
+          mimeType,
+          fileSize: file.size,
+          base64Data,
+        });
+
+        if (res.success && res.logoUrl) {
+          setLogoRenderError(false);
+          setSettings((prev) => ({
+            ...(res.data || prev),
+            logo_url: res.logoUrl,
+          }));
+          emitLogoSync(res.logoUrl);
+          router.refresh();
+          setNotification({
+            type: "success",
+            message: `Business logo for "${business.name}" uploaded successfully.`,
+          });
+          setTimeout(() => setNotification(null), 4000);
+        } else {
+          setNotification({
+            type: "error",
+            message: res.error || "Failed to upload business logo.",
+          });
+        }
+      } catch (err: any) {
+        setNotification({
+          type: "error",
+          message: err?.message || "Unexpected error while uploading logo.",
+        });
+      } finally {
+        setIsUploadingLogo(false);
+      }
+    };
+    reader.onerror = () => {
+      setIsUploadingLogo(false);
+      setNotification({
+        type: "error",
+        message: "Failed to read the selected logo file.",
+      });
+    };
+    reader.readAsDataURL(file);
+  }
+
+  async function handleRemoveLogo() {
+    if (isUploadingLogo) return;
+    setIsUploadingLogo(true);
+    setNotification(null);
+
+    try {
+      const res = await removeBusinessLogoAction(business.slug);
+      if (res.success) {
+        setLogoRenderError(false);
+        setSettings((prev) => ({
+          ...(res.data || prev),
+          logo_url: null,
+        }));
+        emitLogoSync(null);
+        router.refresh();
+        setNotification({
+          type: "success",
+          message: "Custom logo removed. Reverted to monogram badge.",
+        });
+        setTimeout(() => setNotification(null), 4000);
+      } else {
+        setNotification({
+          type: "error",
+          message: res.error || "Failed to remove business logo.",
+        });
+      }
+    } catch (err: any) {
+      setNotification({
+        type: "error",
+        message: err?.message || "Failed to remove business logo.",
+      });
+    } finally {
+      setIsUploadingLogo(false);
+    }
+  }
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     setIsSaving(true);
     setNotification(null);
 
-    const res = await updateBusinessSettingsAction(business.slug, settings);
+    const { logo_url: _omitLogoUrl, ...settingsPayload } = settings;
+    const res = await updateBusinessSettingsAction(business.slug, settingsPayload);
     setIsSaving(false);
 
     if (res.success && res.data) {
@@ -124,36 +267,100 @@ export function BusinessSettingsClient({
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
-            {/* Logo Placeholder Section */}
-            <div className="flex items-center gap-4 p-4 rounded-xl border border-slate-100 bg-slate-50/80">
-              <div
-                className={`h-16 w-16 rounded-2xl flex items-center justify-center font-bold text-xl text-white shadow-md ${
-                  isAstrology
-                    ? "bg-gradient-to-tr from-purple-700 to-indigo-600"
-                    : "bg-gradient-to-tr from-rose-600 to-pink-500"
-                }`}
-              >
-                {settings.logo_placeholder || (isAstrology ? "GA" : "GV")}
-              </div>
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-slate-800">Business Logo Placeholder</span>
+            {/* Brand Logo Upload & Monogram Fallback Section */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 p-4 rounded-xl border border-slate-200 bg-slate-50/80">
+              {settings.logo_url && !logoRenderError ? (
+                <div className="h-16 w-16 rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden shrink-0 flex items-center justify-center p-1">
+                  <img
+                    src={settings.logo_url}
+                    alt={`${business.name} logo`}
+                    onError={() => setLogoRenderError(true)}
+                    className="h-full w-full object-contain rounded-xl"
+                  />
+                </div>
+              ) : (
+                <div
+                  className={`h-16 w-16 rounded-2xl flex items-center justify-center font-bold text-xl text-white shadow-md shrink-0 ${
+                    isAstrology
+                      ? "bg-gradient-to-tr from-purple-700 to-indigo-600"
+                      : "bg-gradient-to-tr from-rose-600 to-pink-500"
+                  }`}
+                >
+                  {settings.logo_placeholder || (isAstrology ? "GA" : "GV")}
+                </div>
+              )}
+
+              <div className="space-y-2 flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-semibold text-slate-800">Business Brand Logo</span>
                   <Badge variant="outline" className="text-[10px] bg-white">
-                    PNG / SVG / Initials
+                    PNG / SVG / JPG / WebP (Max 2 MB)
                   </Badge>
+                  {settings.logo_url && !logoRenderError && (
+                    <Badge variant="success" className="text-[10px]">
+                      Custom Logo Active
+                    </Badge>
+                  )}
                 </div>
                 <p className="text-[11px] text-slate-500">
-                  Custom monogram badge rendered on customer-facing portals and outbound headers.
+                  Upload your custom brand image for the workspace header and business switcher, or customize the 1–3 letter monogram fallback.
                 </p>
-                <div className="flex items-center gap-2 pt-1">
-                  <Input
-                    maxLength={3}
-                    placeholder="GA"
-                    value={settings.logo_placeholder}
-                    onChange={(e) => setSettings({ ...settings, logo_placeholder: e.target.value.toUpperCase() })}
-                    className="w-20 text-xs text-center font-bold tracking-wider"
+
+                <div className="flex flex-wrap items-center gap-2 pt-1">
+                  <input
+                    ref={logoInputRef}
+                    id="business-logo-file-input"
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                    onChange={handleLogoFileChange}
+                    className="hidden"
                   />
-                  <span className="text-[11px] text-slate-400">1-3 letters monogram</span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isUploadingLogo}
+                    onClick={() => logoInputRef.current?.click()}
+                    className="h-8 text-xs gap-1.5 bg-white"
+                  >
+                    {isUploadingLogo ? (
+                      <>
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-indigo-600" />
+                        <span>Uploading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Upload className="h-3.5 w-3.5 text-indigo-600" />
+                        <span>{settings.logo_url ? "Replace Logo" : "Upload Logo"}</span>
+                      </>
+                    )}
+                  </Button>
+
+                  {settings.logo_url && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={isUploadingLogo}
+                      onClick={handleRemoveLogo}
+                      className="h-8 text-xs gap-1.5 text-rose-600 border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Remove Logo</span>
+                    </Button>
+                  )}
+
+                  <div className="flex items-center gap-2 sm:ml-2 sm:pl-3 sm:border-l sm:border-slate-200">
+                    <Input
+                      maxLength={3}
+                      placeholder="GA"
+                      value={settings.logo_placeholder}
+                      onChange={(e) => setSettings({ ...settings, logo_placeholder: e.target.value.toUpperCase() })}
+                      aria-label="Fallback monogram letters"
+                      className="w-16 h-8 text-xs text-center font-bold tracking-wider"
+                    />
+                    <span className="text-[11px] text-slate-400">Fallback monogram</span>
+                  </div>
                 </div>
               </div>
             </div>

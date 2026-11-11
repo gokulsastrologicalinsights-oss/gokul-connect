@@ -7,6 +7,7 @@ export interface Business {
   description: string;
   icon_name: string;
   accent_color: 'purple' | 'rose' | string;
+  logo_url?: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -112,6 +113,7 @@ export interface BusinessSettings {
   display_name: string;
   business_info: string;
   logo_placeholder: string;
+  logo_url?: string | null;
   timezone: string;
   default_language: string;
   notification_preferences: {
@@ -1278,6 +1280,19 @@ export interface CrmLifecycleReport {
   }>;
   inactiveContactsCount: number;
 }
+
+export interface CannedResponse {
+  id: string;
+  business_id: string;
+  shortcut: string;
+  title: string;
+  content: string;
+  category: string;
+  created_by?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
 
 
 

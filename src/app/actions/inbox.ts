@@ -14,11 +14,24 @@ import {
   updateConversationLabels,
 } from "@/lib/inbox/store";
 import { getInboxCountsDb } from "@/lib/inbox/database";
-import { createContactDb, getOrCreateConversationForContactDb } from "@/lib/crm/database";
+import {
+  createContactDb,
+  getOrCreateConversationForContactDb,
+  normalizePhoneNumber,
+} from "@/lib/crm/database";
+import {
+  createCannedResponseDb,
+  deleteCannedResponseDb,
+  listCannedResponsesDb,
+  updateCannedResponseDb,
+} from "@/lib/inbox/canned-responses";
+import { extractTemplateVariables } from "@/lib/templates/validation";
 import { assignConversationToAgent, logTeamActivity } from "@/lib/team/store";
 import {
+  CannedResponse,
   ConversationStatus,
   SupportedMediaType,
+  WhatsAppConversation,
   WhatsAppMessage,
   WhatsAppMessageTemplate,
 } from "@/types/database";
@@ -32,10 +45,15 @@ import {
 } from "@/lib/rate-limit/rate-limiter";
 import {
   AssignConversationAgentSchema,
+  CreateCannedResponseSchema,
+  DeleteCannedResponseSchema,
   GetMediaDownloadUrlSchema,
   InboxSendMessageInputSchema,
   RetryMediaMessageSchema,
   SendMediaMessageSchema,
+  StartNewConversationSchema,
+  UpdateCannedResponseSchema,
+  UpdateConversationLabelsSchema,
   UpdateConversationStatusSchema,
   ValidatedSendMediaMessage,
 } from "@/lib/validation/schemas";
@@ -742,18 +760,35 @@ export async function updateConversationLabelsAction(input: {
   error?: string;
 }> {
   try {
-    const { business, membership } = await validateBusinessAccess(input.businessSlug);
+    const parsed = UpdateConversationLabelsSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message || "Invalid labels payload.",
+      };
+    }
+
+    const { businessSlug, conversationId, labels } = parsed.data;
+    const { business, membership } = await validateBusinessAccess(businessSlug);
     if (!membership || !["owner", "admin", "agent"].includes(membership.role)) {
       return { success: false, error: "Unauthorized: Insufficient permissions." };
     }
 
+    const rateLimit = rateLimitSensitiveAction(business.id, "update_conversation_labels");
+    if (!rateLimit.success) {
+      return {
+        success: false,
+        error: `Rate limit exceeded: Please wait ${rateLimit.retryAfterSeconds}s.`,
+      };
+    }
+
     const updatedLabels = await updateConversationLabels(
       business.id,
-      input.conversationId,
-      input.labels
+      conversationId,
+      labels
     );
 
-    revalidatePath(`/workspace/${input.businessSlug}/inbox`);
+    revalidatePath(`/workspace/${businessSlug}/inbox`);
     return { success: true, labels: updatedLabels };
   } catch (err: any) {
     return {
@@ -764,96 +799,477 @@ export async function updateConversationLabelsAction(input: {
 }
 
 /**
- * Start a new customer conversation from the inbox
+ * Start a new customer conversation from the inbox (with E.164 validation & approved template dispatch).
  */
 export async function startNewConversationAction(input: {
   businessSlug: string;
   phoneNumber: string;
   displayName: string;
+  category?: string | null;
   connectionId?: string;
   initialMessage?: string;
   templateId?: string;
+  templateName?: string;
+  templateLanguage?: string;
   templateVariables?: Record<string, string>;
 }): Promise<{
   success: boolean;
   conversationId?: string;
+  conversation?: WhatsAppConversation | null;
+  message?: WhatsAppMessage;
+  isWindowClosed?: boolean;
   error?: string;
 }> {
   try {
-    const { business, membership } = await validateBusinessAccess(input.businessSlug);
-    if (membership.role === "viewer") {
+    const parsed = StartNewConversationSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message || "Invalid start-chat input parameters.",
+      };
+    }
+
+    const data = parsed.data;
+    const { business, membership } = await validateBusinessAccess(data.businessSlug);
+    if (!membership || !["owner", "admin", "agent"].includes(membership.role)) {
       return {
         success: false,
         error: "Permission denied: Viewers cannot initiate customer conversations.",
       };
     }
 
-    if (!input.phoneNumber || input.phoneNumber.trim().length < 5) {
-      return { success: false, error: "Valid phone number is required." };
+    const normalizedDigits = normalizePhoneNumber(data.phoneNumber);
+    if (normalizedDigits.length < 7 || normalizedDigits.length > 15) {
+      return {
+        success: false,
+        error: "Valid E.164 phone number with country code is required (7–15 digits, e.g. +919840012345).",
+      };
     }
 
-    // 1. Create or get CRM contact
-    let contact;
-    try {
-      contact = await createContactDb(business.id, {
-        display_name: input.displayName || input.phoneNumber,
-        phone_number: input.phoneNumber,
-        status: "lead",
-        source: "manual",
-      });
-    } catch (contactErr: any) {
-      // If contact already exists, fetch from contacts
+    const rateLimit = rateLimitOutboundMessages(business.id);
+    if (!rateLimit.success) {
+      return {
+        success: false,
+        error: `Rate limit exceeded: Please wait ${rateLimit.retryAfterSeconds}s before starting a new chat.`,
+      };
+    }
+
+    // 1. Resolve WhatsApp connection within verified business
+    const { isSupabaseConfigured } = await import("@/lib/supabase/client");
+    const { getConnectionsForBusiness, getConnectionsForBusinessDb } = await import(
+      "@/lib/connections/store"
+    );
+    const conns = isSupabaseConfigured()
+      ? await getConnectionsForBusinessDb(business.id)
+      : getConnectionsForBusiness(business.id);
+
+    let resolvedConnectionId = data.connectionId?.trim() || "";
+    if (resolvedConnectionId) {
+      const targetConn = conns.find((c) => c.id === resolvedConnectionId);
+      if (!targetConn) {
+        return {
+          success: false,
+          error: "Selected WhatsApp line does not belong to this business workspace.",
+        };
+      }
+      if (!targetConn.is_enabled) {
+        return {
+          success: false,
+          error: `WhatsApp line "${targetConn.display_name}" is currently disabled.`,
+        };
+      }
+    } else {
+      const activeConn = conns.find((c) => c.is_enabled) || conns[0];
+      if (!activeConn) {
+        return {
+          success: false,
+          error: "No WhatsApp connection configured for this business. Please configure one first.",
+        };
+      }
+      resolvedConnectionId = activeConn.id;
+    }
+
+    // 2. Find existing or create CRM contact using normalized phone digits
+    let contact: any = null;
+    if (isSupabaseConfigured()) {
       const { createServerSupabaseClient } = await import("@/lib/supabase/server");
       const supabase = await createServerSupabaseClient();
       const { data: existing } = await supabase
         .from("wa_contacts")
         .select("*")
         .eq("business_id", business.id)
-        .eq("phone_number", input.phoneNumber.replace(/[^0-9+]/g, ""))
+        .in("phone_number", [normalizedDigits, `+${normalizedDigits}`])
+        .limit(1)
         .maybeSingle();
 
       if (existing) {
         contact = existing;
-      } else {
-        throw contactErr;
       }
     }
 
-    // 2. Create or find conversation
+    if (!contact) {
+      try {
+        contact = await createContactDb(business.id, {
+          display_name: data.displayName || normalizedDigits,
+          phone_number: normalizedDigits,
+          category: data.category || null,
+          status: "lead",
+          source: "manual",
+        });
+      } catch (contactErr: any) {
+        if (isSupabaseConfigured()) {
+          const { createServerSupabaseClient } = await import("@/lib/supabase/server");
+          const supabase = await createServerSupabaseClient();
+          const { data: existing } = await supabase
+            .from("wa_contacts")
+            .select("*")
+            .eq("business_id", business.id)
+            .eq("phone_number", normalizedDigits)
+            .maybeSingle();
+          if (existing) {
+            contact = existing;
+          } else {
+            throw contactErr;
+          }
+        } else {
+          const { getCrmContactsDb } = await import("@/lib/crm/database");
+          const existingList = await getCrmContactsDb(business.id, {
+            search: normalizedDigits,
+            limit: 10,
+          });
+          const match = existingList.contacts.find(
+            (c) => normalizePhoneNumber(c.phone_number) === normalizedDigits
+          );
+          if (match) {
+            contact = match;
+          } else {
+            throw contactErr;
+          }
+        }
+      }
+    }
+
+    // 3. Create or find conversation bound to the selected connection
     const { conversationId } = await getOrCreateConversationForContactDb(
       business.id,
       contact.id,
-      { connectionId: input.connectionId }
+      { connectionId: resolvedConnectionId }
     );
 
-    // 3. Send initial message or template if provided
-    if (input.initialMessage || input.templateId) {
-      let resolvedConnectionId = input.connectionId;
-      if (!resolvedConnectionId) {
-        const { getConnectionsForBusinessDb } = await import("@/lib/connections/store");
-        const conns = await getConnectionsForBusinessDb(business.id);
-        const activeConn = conns.find((c) => c.is_enabled) || conns[0];
-        resolvedConnectionId = activeConn?.id || "";
+    // 4. Resolve and dispatch Approved Template (or enforce 24h window for free-form text)
+    let sendRes: Awaited<ReturnType<typeof sendWhatsAppMessageService>> | null = null;
+    const requestedTemplateKey = data.templateName?.trim() || data.templateId?.trim();
+
+    if (requestedTemplateKey) {
+      const approvedList = await getApprovedTemplatesDb(business.id, resolvedConnectionId);
+      const matchedTpl = approvedList.find(
+        (t) =>
+          t.id === requestedTemplateKey ||
+          t.template_name.toLowerCase() === requestedTemplateKey.toLowerCase()
+      );
+
+      if (!matchedTpl) {
+        return {
+          success: false,
+          error: `Approved WhatsApp template "${requestedTemplateKey}" was not found for this business/line.`,
+        };
       }
 
-      if (resolvedConnectionId) {
-        await sendWhatsAppMessageService({
-          businessId: business.id,
-          connectionId: resolvedConnectionId,
-          recipientPhone: input.phoneNumber,
-          conversationId,
-          text: input.initialMessage,
-          template: input.templateId ? { name: input.templateId, languageCode: "en", components: [] } : undefined,
+      if (matchedTpl.status !== "APPROVED" || matchedTpl.is_archived) {
+        return {
+          success: false,
+          error: `Template "${matchedTpl.template_name}" is not approved for outbound initiation.`,
+        };
+      }
+
+      const varExtraction = extractTemplateVariables(matchedTpl.components);
+      const vars = data.templateVariables || {};
+      const missingVars = varExtraction.allVariables.filter((v) => !vars[v]?.trim());
+      if (missingVars.length > 0) {
+        return {
+          success: false,
+          error: `Missing required template variable(s): {{${missingVars.join("}}, {{")}}}`,
+        };
+      }
+
+      const componentsPayload: Array<Record<string, unknown>> = [];
+      if (varExtraction.headerVariables.length > 0) {
+        componentsPayload.push({
+          type: "header",
+          parameters: varExtraction.headerVariables.map((v) => ({
+            type: "text",
+            text: (vars[v] || "").trim(),
+          })),
         });
       }
+      if (varExtraction.bodyVariables.length > 0) {
+        componentsPayload.push({
+          type: "body",
+          parameters: varExtraction.bodyVariables.map((v) => ({
+            type: "text",
+            text: (vars[v] || "").trim(),
+          })),
+        });
+      }
+
+      sendRes = await sendWhatsAppMessageService({
+        businessId: business.id,
+        connectionId: resolvedConnectionId,
+        recipientPhone: normalizedDigits,
+        recipientName: contact.display_name || data.displayName,
+        conversationId,
+        template: {
+          name: matchedTpl.template_name,
+          languageCode: matchedTpl.language || data.templateLanguage || "en_US",
+          components: componentsPayload.length > 0 ? componentsPayload : undefined,
+        },
+        enforceWindow: true,
+      });
+    } else if (data.initialMessage) {
+      sendRes = await sendWhatsAppMessageService({
+        businessId: business.id,
+        connectionId: resolvedConnectionId,
+        recipientPhone: normalizedDigits,
+        recipientName: contact.display_name || data.displayName,
+        conversationId,
+        text: data.initialMessage,
+        enforceWindow: true,
+      });
+    } else {
+      return {
+        success: false,
+        error: "Please select an approved WhatsApp template to initiate this conversation.",
+      };
     }
 
-    revalidatePath(`/workspace/${input.businessSlug}/inbox`);
-    return { success: true, conversationId };
+    const finalConversationId = sendRes?.conversationId || conversationId;
+    let hydratedConv: WhatsAppConversation | null = null;
+    try {
+      hydratedConv = await getConversationByIdDb(business.id, finalConversationId);
+    } catch {
+      hydratedConv = null;
+    }
+
+    if (!hydratedConv && contact) {
+      const selectedConn = conns.find((c) => c.id === resolvedConnectionId);
+      const nowIso = new Date().toISOString();
+      hydratedConv = {
+        id: finalConversationId,
+        business_id: business.id,
+        connection_id: resolvedConnectionId,
+        contact_id: contact.id,
+        status: "open",
+        last_message_preview: sendRes?.message?.content || null,
+        last_message_at: sendRes?.message?.created_at || nowIso,
+        unread_count: 0,
+        labels: [],
+        created_at: nowIso,
+        updated_at: nowIso,
+        contact,
+        connection: selectedConn,
+        last_message_direction: "outbound",
+      };
+    }
+
+    revalidatePath(`/workspace/${data.businessSlug}/inbox`);
+    revalidatePath(`/workspace/${data.businessSlug}/crm`);
+
+    if (!sendRes.success) {
+      return {
+        success: false,
+        conversationId: finalConversationId,
+        conversation: hydratedConv,
+        message: sendRes.message,
+        isWindowClosed: sendRes.isWindowClosed,
+        error: sendRes.error || "Failed to dispatch WhatsApp opening template.",
+      };
+    }
+
+    return {
+      success: true,
+      conversationId: finalConversationId,
+      conversation: hydratedConv,
+      message: sendRes.message,
+    };
   } catch (err: any) {
     return {
       success: false,
       error: err.message || "Failed to start conversation.",
+    };
+  }
+}
+
+/**
+ * List quick replies / canned responses for a business workspace.
+ */
+export async function listCannedResponsesAction(
+  businessSlug: string
+): Promise<{ success: boolean; responses: CannedResponse[]; error?: string }> {
+  try {
+    const { business, membership } = await validateBusinessAccess(businessSlug);
+    if (!membership) {
+      return { success: false, responses: [], error: "Unauthorized: Membership required." };
+    }
+
+    const responses = await listCannedResponsesDb(business.id, {
+      businessSlug: business.slug,
+    });
+    return { success: true, responses };
+  } catch (err: any) {
+    return {
+      success: false,
+      responses: [],
+      error: err.message || "Failed to load quick replies.",
+    };
+  }
+}
+
+/**
+ * Create a new quick reply / canned response snippet.
+ */
+export async function createCannedResponseAction(input: {
+  businessSlug: string;
+  shortcut: string;
+  title: string;
+  content: string;
+  category?: string;
+}): Promise<{ success: boolean; response?: CannedResponse; error?: string }> {
+  try {
+    const parsed = CreateCannedResponseSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message || "Invalid quick reply fields.",
+      };
+    }
+
+    const { business, membership, user } = await validateBusinessAccess(parsed.data.businessSlug);
+    if (!membership || !["owner", "admin", "agent"].includes(membership.role)) {
+      return {
+        success: false,
+        error: "Unauthorized: Viewers cannot create quick replies.",
+      };
+    }
+
+    const rateLimit = rateLimitSensitiveAction(business.id, "manage_canned_responses");
+    if (!rateLimit.success) {
+      return {
+        success: false,
+        error: `Rate limit exceeded: Please wait ${rateLimit.retryAfterSeconds}s.`,
+      };
+    }
+
+    const created = await createCannedResponseDb(business.id, {
+      shortcut: parsed.data.shortcut,
+      title: parsed.data.title,
+      content: parsed.data.content,
+      category: parsed.data.category,
+      createdBy: user.id,
+      businessSlug: business.slug,
+    });
+
+    revalidatePath(`/workspace/${parsed.data.businessSlug}/inbox`);
+    return { success: true, response: created };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Failed to create quick reply.",
+    };
+  }
+}
+
+/**
+ * Update an existing quick reply / canned response snippet.
+ */
+export async function updateCannedResponseAction(input: {
+  businessSlug: string;
+  responseId: string;
+  shortcut?: string;
+  title?: string;
+  content?: string;
+  category?: string;
+}): Promise<{ success: boolean; response?: CannedResponse; error?: string }> {
+  try {
+    const parsed = UpdateCannedResponseSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message || "Invalid quick reply update.",
+      };
+    }
+
+    const { business, membership } = await validateBusinessAccess(parsed.data.businessSlug);
+    if (!membership || !["owner", "admin", "agent"].includes(membership.role)) {
+      return {
+        success: false,
+        error: "Unauthorized: Viewers cannot update quick replies.",
+      };
+    }
+
+    const rateLimit = rateLimitSensitiveAction(business.id, "manage_canned_responses");
+    if (!rateLimit.success) {
+      return {
+        success: false,
+        error: `Rate limit exceeded: Please wait ${rateLimit.retryAfterSeconds}s.`,
+      };
+    }
+
+    const updated = await updateCannedResponseDb(business.id, parsed.data.responseId, {
+      shortcut: parsed.data.shortcut,
+      title: parsed.data.title,
+      content: parsed.data.content,
+      category: parsed.data.category,
+    });
+
+    revalidatePath(`/workspace/${parsed.data.businessSlug}/inbox`);
+    return { success: true, response: updated };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Failed to update quick reply.",
+    };
+  }
+}
+
+/**
+ * Delete a quick reply / canned response snippet.
+ */
+export async function deleteCannedResponseAction(input: {
+  businessSlug: string;
+  responseId: string;
+}): Promise<{ success: boolean; error?: string }> {
+  try {
+    const parsed = DeleteCannedResponseSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message || "Invalid delete request.",
+      };
+    }
+
+    const { business, membership } = await validateBusinessAccess(parsed.data.businessSlug);
+    if (!membership || !["owner", "admin", "agent"].includes(membership.role)) {
+      return {
+        success: false,
+        error: "Unauthorized: Viewers cannot delete quick replies.",
+      };
+    }
+
+    const rateLimit = rateLimitSensitiveAction(business.id, "manage_canned_responses");
+    if (!rateLimit.success) {
+      return {
+        success: false,
+        error: `Rate limit exceeded: Please wait ${rateLimit.retryAfterSeconds}s.`,
+      };
+    }
+
+    await deleteCannedResponseDb(business.id, parsed.data.responseId);
+    revalidatePath(`/workspace/${parsed.data.businessSlug}/inbox`);
+    return { success: true };
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Failed to delete quick reply.",
     };
   }
 }

@@ -12,8 +12,11 @@ import {
   Archive,
   Smartphone,
   ChevronDown,
+  Tag,
+  X,
 } from "lucide-react";
 import { InboxCounts, InboxFolder, SafeWhatsAppConnection } from "@/types/database";
+import { getLabelStyle } from "@/lib/inbox/labels";
 
 interface ConversationNavPanelProps {
   activeFolder: InboxFolder;
@@ -23,6 +26,9 @@ interface ConversationNavPanelProps {
   selectedConnectionId: string;
   onSelectConnection: (connectionId: string) => void;
   accentColor: string;
+  availableLabels?: Array<{ label: string; count: number }>;
+  selectedLabel?: string;
+  onSelectLabel?: (label: string) => void;
 }
 
 export function ConversationNavPanel({
@@ -33,6 +39,9 @@ export function ConversationNavPanel({
   selectedConnectionId,
   onSelectConnection,
   accentColor,
+  availableLabels = [],
+  selectedLabel = "all",
+  onSelectLabel,
 }: ConversationNavPanelProps) {
   const folders: Array<{
     id: InboxFolder;
@@ -124,6 +133,71 @@ export function ConversationNavPanel({
             </button>
           );
         })}
+
+        {/* Conversation Labels Filter Section */}
+        {onSelectLabel && (
+          <div className="pt-4 mt-2 border-t border-slate-100 space-y-1">
+            <div className="px-2.5 py-1 flex items-center justify-between">
+              <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                <Tag className="w-3 h-3" />
+                Labels
+              </span>
+              {selectedLabel !== "all" && (
+                <button
+                  type="button"
+                  onClick={() => onSelectLabel("all")}
+                  className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-800 flex items-center gap-0.5"
+                  aria-label="Clear label filter"
+                >
+                  <X className="w-3 h-3" />
+                  <span>Clear</span>
+                </button>
+              )}
+            </div>
+
+            {availableLabels.length === 0 ? (
+              <p className="px-3 py-1.5 text-[11px] text-slate-400 italic">
+                No conversation labels yet
+              </p>
+            ) : (
+              availableLabels.map(({ label, count }) => {
+                const isActiveLabel = selectedLabel === label;
+                const style = getLabelStyle(label);
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => onSelectLabel(isActiveLabel ? "all" : label)}
+                    aria-label={`Filter by label ${label} (${count})`}
+                    className={`w-full min-h-[34px] flex items-center justify-between px-3 py-1.5 rounded-lg text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                      isActiveLabel
+                        ? "bg-indigo-600 text-white shadow-sm"
+                        : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className={`w-2 h-2 rounded-full shrink-0 ${
+                          isActiveLabel ? "bg-white" : style.dot
+                        }`}
+                      />
+                      <span className="truncate">{label}</span>
+                    </div>
+                    <span
+                      className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium ${
+                        isActiveLabel
+                          ? "bg-indigo-700 text-indigo-100"
+                          : "bg-slate-100 text-slate-600"
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+        )}
       </nav>
 
       {/* Status indicator footer */}

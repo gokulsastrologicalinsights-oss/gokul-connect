@@ -35,6 +35,7 @@ import {
 } from "@/types/database";
 import { formatKolkataTimestamp } from "@/lib/notifications/date-utils";
 import { Badge } from "@/components/ui/badge";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase/client";
 
 interface NotificationsClientProps {
   business: Business;
@@ -128,6 +129,43 @@ export function NotificationsClient({ business, user }: NotificationsClientProps
   useEffect(() => {
     fetchPreferences();
   }, [fetchPreferences]);
+
+  // Live Supabase Realtime subscription on crm_follow_up_reminders
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    let supabase: any = null;
+    try {
+      supabase = createClient();
+    } catch {
+      return;
+    }
+
+    const channel = supabase
+      .channel(`notifications-page:${business.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "*",
+          schema: "public",
+          table: "crm_follow_up_reminders",
+          filter: `business_id=eq.${business.id}`,
+        },
+        (payload: any) => {
+          const targetUserId = payload?.new?.user_id || payload?.old?.user_id;
+          if (user?.id && targetUserId && targetUserId !== user.id) {
+            return;
+          }
+          fetchNotifications();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      try {
+        supabase.removeChannel(channel);
+      } catch {}
+    };
+  }, [business.id, user?.id, fetchNotifications]);
 
   // Mark single as read
   const handleMarkRead = async (id: string, e?: React.MouseEvent) => {

@@ -4,19 +4,26 @@ import React, { useEffect, useMemo, useState } from "react";
 import { ConversationNavPanel } from "./ConversationNavPanel";
 import { ConversationListPanel } from "./ConversationListPanel";
 import { ChatWindowPanel } from "./ChatWindowPanel";
+import { StartConversationModal } from "./StartConversationModal";
 import {
   assignConversationAgentAction,
+  createCannedResponseAction,
+  deleteCannedResponseAction,
   getApprovedTemplatesAction,
   getConversationMessagesAction,
   getMediaDownloadUrlAction,
+  listCannedResponsesAction,
   retryFailedMediaMessageAction,
   sendWhatsAppMediaMessageAction,
   sendWhatsAppMessageAction,
   toggleConversationReadAction,
+  updateCannedResponseAction,
+  updateConversationLabelsAction,
   updateConversationStatusAction,
 } from "@/app/actions/inbox";
 import {
   Business,
+  CannedResponse,
   InboxCounts,
   InboxFolder,
   SafeWhatsAppConnection,
@@ -39,6 +46,8 @@ interface InboxClientProps {
   initialSelectedConversationId?: string | null;
   initialFolder?: InboxFolder;
   initialConnectionId?: string;
+  initialLabel?: string;
+  initialCannedResponses?: CannedResponse[];
   currentUser?: any;
   currentMembership?: any;
   teamMembers?: TeamMemberWithProfile[];
@@ -54,15 +63,21 @@ export function InboxClient({
   initialSelectedConversationId = null,
   initialFolder = "all",
   initialConnectionId = "all",
+  initialLabel = "all",
+  initialCannedResponses = [],
   currentUser,
   currentMembership,
   teamMembers = [],
 }: InboxClientProps) {
   const myUserId = currentUser?.id || "owner-user-00000000-0000-0000-0000-000000000001";
+  const isViewer = currentMembership?.role === "viewer";
   const [conversations, setConversations] = useState<WhatsAppConversation[]>(initialConversations);
   const [activeFolder, setActiveFolder] = useState<InboxFolder>(initialFolder);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string>(initialConnectionId);
+  const [selectedLabel, setSelectedLabel] = useState<string>(initialLabel || "all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [showStartChatModal, setShowStartChatModal] = useState<boolean>(false);
+  const [cannedResponses, setCannedResponses] = useState<CannedResponse[]>(initialCannedResponses);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(
     initialSelectedConversationId ?? (initialConversations.length > 0 ? initialConversations[0].id : null)
   );
@@ -76,7 +91,7 @@ export function InboxClient({
   const [isLoadingOlder, setIsLoadingOlder] = useState<boolean>(false);
   const [approvedTemplates, setApprovedTemplates] = useState<WhatsAppMessageTemplate[]>([]);
 
-  // Load approved templates for this business
+  // Load approved templates and quick replies for this business
   useEffect(() => {
     let isMounted = true;
     getApprovedTemplatesAction(business.slug, selectedConnectionId !== "all" ? selectedConnectionId : undefined)
@@ -86,6 +101,17 @@ export function InboxClient({
         }
       })
       .catch((err) => console.error("Failed to load approved templates:", err));
+
+    if (initialCannedResponses.length === 0) {
+      listCannedResponsesAction(business.slug)
+        .then((res) => {
+          if (isMounted && res.success && res.responses) {
+            setCannedResponses(res.responses);
+          }
+        })
+        .catch(() => {});
+    }
+
     return () => {
       isMounted = false;
     };
@@ -281,7 +307,12 @@ export function InboxClient({
   }, [business.slug, selectedConversationId, realtimeStatus]);
 
   // Synchronize URL parameters with current inbox state
-  const syncUrlParams = (convId: string | null, folder: InboxFolder, line: string) => {
+  const syncUrlParams = (
+    convId: string | null,
+    folder: InboxFolder,
+    line: string,
+    label: string = selectedLabel
+  ) => {
     if (typeof window === "undefined") return;
     try {
       const url = new URL(window.location.href);
@@ -300,7 +331,12 @@ export function InboxClient({
       } else {
         url.searchParams.delete("line");
       }
-      window.history.pushState({ c: convId, folder, line }, "", url.toString());
+      if (label && label !== "all") {
+        url.searchParams.set("label", label);
+      } else {
+        url.searchParams.delete("label");
+      }
+      window.history.pushState({ c: convId, folder, line, label }, "", url.toString());
     } catch {
       // Fallback for non-standard environments
     }
@@ -314,9 +350,11 @@ export function InboxClient({
       const convId = params.get("c");
       const folder = (params.get("folder") as InboxFolder) || "all";
       const line = params.get("line") || "all";
+      const label = params.get("label") || "all";
 
       setActiveFolder(folder);
       setSelectedConnectionId(line);
+      setSelectedLabel(label);
 
       if (convId) {
         setSelectedConversationId(convId);
@@ -330,12 +368,38 @@ export function InboxClient({
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  // Compute distinct conversation labels with counts for sidebar filter
+  const availableLabels = useMemo(() => {
+    const countsMap = new Map<string, number>();
+    const activeConvs =
+      selectedConnectionId === "all"
+        ? conversations
+        : conversations.filter((c) => c.connection_id === selectedConnectionId);
+
+    for (const conv of activeConvs) {
+      for (const lbl of conv.labels || []) {
+        const clean = lbl.trim();
+        if (!clean) continue;
+        countsMap.set(clean, (countsMap.get(clean) || 0) + 1);
+      }
+    }
+
+    return Array.from(countsMap.entries())
+      .map(([label, count]) => ({ label, count }))
+      .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label));
+  }, [conversations, selectedConnectionId]);
+
   // Compute filtered conversations
   const filteredConversations = useMemo(() => {
     return conversations
       .filter((c) => {
         // 1. Connection filter
         if (selectedConnectionId !== "all" && c.connection_id !== selectedConnectionId) {
+          return false;
+        }
+
+        // 1b. Label filter
+        if (selectedLabel !== "all" && !(c.labels || []).includes(selectedLabel)) {
           return false;
         }
 
@@ -375,7 +439,7 @@ export function InboxClient({
         const tB = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
         return tB - tA;
       });
-  }, [conversations, selectedConnectionId, activeFolder, searchQuery, myUserId]);
+  }, [conversations, selectedConnectionId, selectedLabel, activeFolder, searchQuery, myUserId]);
 
   // Dynamically recalculate folder counts based on current conversation states
   const counts: InboxCounts = useMemo(() => {
@@ -514,6 +578,148 @@ export function InboxClient({
       await assignConversationAgentAction(business.slug, convId, agentId, agentName);
     } catch (err) {
       console.error("Failed to assign agent:", err);
+    }
+  };
+
+  // Update Labels handler (with optimistic update & rollback)
+  const handleUpdateLabels = async (
+    convId: string,
+    nextLabels: string[]
+  ): Promise<{ success: boolean; error?: string }> => {
+    const previous = conversations.find((c) => c.id === convId)?.labels || [];
+
+    setConversations((prev) =>
+      prev.map((c) => (c.id === convId ? { ...c, labels: nextLabels } : c))
+    );
+
+    try {
+      const res = await updateConversationLabelsAction({
+        businessSlug: business.slug,
+        conversationId: convId,
+        labels: nextLabels,
+      });
+
+      if (res.success && res.labels) {
+        setConversations((prev) =>
+          prev.map((c) => (c.id === convId ? { ...c, labels: res.labels } : c))
+        );
+        return { success: true };
+      }
+
+      setConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, labels: previous } : c))
+      );
+      return { success: false, error: res.error || "Failed to update labels." };
+    } catch (err: any) {
+      setConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, labels: previous } : c))
+      );
+      return { success: false, error: err?.message || "Failed to update labels." };
+    }
+  };
+
+  // Canned Responses CRUD handlers
+  const handleCreateCannedResponse = async (input: {
+    shortcut: string;
+    title: string;
+    content: string;
+    category: string;
+  }) => {
+    const res = await createCannedResponseAction({
+      businessSlug: business.slug,
+      ...input,
+    });
+    if (res.success && res.response) {
+      setCannedResponses((prev) =>
+        [...prev, res.response!].sort((a, b) => a.shortcut.localeCompare(b.shortcut))
+      );
+    }
+    return res;
+  };
+
+  const handleUpdateCannedResponse = async (input: {
+    responseId: string;
+    shortcut: string;
+    title: string;
+    content: string;
+    category: string;
+  }) => {
+    const res = await updateCannedResponseAction({
+      businessSlug: business.slug,
+      ...input,
+    });
+    if (res.success && res.response) {
+      setCannedResponses((prev) =>
+        prev
+          .map((r) => (r.id === res.response!.id ? res.response! : r))
+          .sort((a, b) => a.shortcut.localeCompare(b.shortcut))
+      );
+    }
+    return res;
+  };
+
+  const handleDeleteCannedResponse = async (responseId: string) => {
+    const res = await deleteCannedResponseAction({
+      businessSlug: business.slug,
+      responseId,
+    });
+    if (res.success) {
+      setCannedResponses((prev) => prev.filter((r) => r.id !== responseId));
+    }
+    return res;
+  };
+
+  // Handle newly initiated conversation from Start New Chat modal
+  const handleConversationStarted = async (result: {
+    conversationId: string;
+    conversation?: WhatsAppConversation | null;
+    message?: WhatsAppMessage;
+  }) => {
+    const { conversationId, conversation, message } = result;
+    if (conversation) {
+      setConversations((prev) => {
+        const exists = prev.some((c) => c.id === conversation.id);
+        const merged = exists
+          ? prev.map((c) => (c.id === conversation.id ? { ...c, ...conversation } : c))
+          : [conversation, ...prev];
+        return merged.sort((a, b) => {
+          const tA = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+          const tB = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+          return tB - tA;
+        });
+      });
+    }
+
+    setActiveFolder("all");
+    setSelectedLabel("all");
+    setSelectedConversationId(conversationId);
+    setShowMobileChat(true);
+    syncUrlParams(conversationId, "all", selectedConnectionId, "all");
+
+    if (message) {
+      setMessages([message]);
+      setHasMoreMessages(false);
+    } else {
+      setIsLoadingMessages(true);
+      try {
+        const res = await getConversationMessagesAction(business.slug, conversationId, { limit: 50 });
+        if (res.success) {
+          setMessages(res.messages);
+          setHasMoreMessages(res.hasMore);
+        }
+      } catch {
+        setMessages([]);
+      } finally {
+        setIsLoadingMessages(false);
+      }
+    }
+
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("workspace:unread-count-sync", {
+          detail: { businessId: business.id, businessSlug: business.slug },
+        })
+      );
     }
   };
 
@@ -876,9 +1082,17 @@ export function InboxClient({
                 onSelectConnection={(connId) => {
                   setSelectedConnectionId(connId);
                   setMobileFoldersOpen(false);
-                  syncUrlParams(selectedConversationId, activeFolder, connId);
+                  syncUrlParams(selectedConversationId, activeFolder, connId, selectedLabel);
                 }}
                 accentColor={business.accent_color}
+                availableLabels={availableLabels}
+                selectedLabel={selectedLabel}
+                onSelectLabel={(lbl) => {
+                  setSelectedLabel(lbl);
+                  setMobileFoldersOpen(false);
+                  setShowMobileChat(false);
+                  syncUrlParams(selectedConversationId, activeFolder, selectedConnectionId, lbl);
+                }}
               />
             </div>
           </div>
@@ -892,16 +1106,23 @@ export function InboxClient({
           onSelectFolder={(f) => {
             setActiveFolder(f);
             setShowMobileChat(false);
-            syncUrlParams(selectedConversationId, f, selectedConnectionId);
+            syncUrlParams(selectedConversationId, f, selectedConnectionId, selectedLabel);
           }}
           counts={counts}
           connections={connections}
           selectedConnectionId={selectedConnectionId}
           onSelectConnection={(connId) => {
             setSelectedConnectionId(connId);
-            syncUrlParams(selectedConversationId, activeFolder, connId);
+            syncUrlParams(selectedConversationId, activeFolder, connId, selectedLabel);
           }}
           accentColor={business.accent_color}
+          availableLabels={availableLabels}
+          selectedLabel={selectedLabel}
+          onSelectLabel={(lbl) => {
+            setSelectedLabel(lbl);
+            setShowMobileChat(false);
+            syncUrlParams(selectedConversationId, activeFolder, selectedConnectionId, lbl);
+          }}
         />
       </div>
 
@@ -924,6 +1145,13 @@ export function InboxClient({
           unreadCount={counts.unread}
           realtimeStatus={realtimeStatus}
           onToggleMobileFolders={() => setMobileFoldersOpen(true)}
+          onOpenStartChat={() => setShowStartChatModal(true)}
+          isViewer={isViewer}
+          selectedLabel={selectedLabel}
+          onClearLabelFilter={() => {
+            setSelectedLabel("all");
+            syncUrlParams(selectedConversationId, activeFolder, selectedConnectionId, "all");
+          }}
         />
       </div>
 
@@ -953,8 +1181,25 @@ export function InboxClient({
           approvedTemplates={approvedTemplates}
           teamMembers={teamMembers}
           currentMembership={currentMembership}
+          availableLabels={availableLabels.map((l) => l.label)}
+          onUpdateLabels={handleUpdateLabels}
+          cannedResponses={cannedResponses}
+          onCreateCannedResponse={handleCreateCannedResponse}
+          onUpdateCannedResponse={handleUpdateCannedResponse}
+          onDeleteCannedResponse={handleDeleteCannedResponse}
         />
       </div>
+
+      {/* Start New Chat Modal */}
+      <StartConversationModal
+        isOpen={showStartChatModal}
+        onClose={() => setShowStartChatModal(false)}
+        business={business}
+        connections={connections}
+        approvedTemplates={approvedTemplates}
+        defaultConnectionId={selectedConnectionId}
+        onConversationStarted={handleConversationStarted}
+      />
     </div>
   );
 }

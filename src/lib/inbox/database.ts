@@ -195,6 +195,7 @@ export interface GetConversationsOptions {
   folder?: InboxFolder;
   searchQuery?: string;
   connectionId?: string;
+  label?: string;
   currentUserId?: string;
   limit?: number;
   offset?: number;
@@ -215,6 +216,7 @@ export async function getConversationsForBusinessDb(
     folder = "all",
     searchQuery = "",
     connectionId,
+    label,
     currentUserId,
     limit = 50,
     offset = 0,
@@ -248,6 +250,11 @@ export async function getConversationsForBusinessDb(
   // Connection filter
   if (connectionId && connectionId !== "all") {
     query = query.eq("connection_id", connectionId);
+  }
+
+  // Label filter (GIN array containment)
+  if (label && label !== "all" && typeof query.contains === "function") {
+    query = query.contains("labels", [label]);
   }
 
   // Folder filter
@@ -289,6 +296,11 @@ export async function getConversationsForBusinessDb(
 
   // Strict tenant boundary sanity check
   conversations = conversations.filter((c) => c.business_id === businessId);
+
+  // Filter for label if not pushed down (e.g. mock client)
+  if (label && label !== "all") {
+    conversations = conversations.filter((c) => (c.labels || []).includes(label));
+  }
 
   // Filter for unassigned or assigned_to_me if requested
   if (folder === "unassigned") {
@@ -691,6 +703,8 @@ export async function getApprovedTemplatesDb(
   );
 }
 
+import { normalizeConversationLabels } from "@/lib/inbox/labels";
+
 /**
  * Update labels on a conversation with strict tenant validation
  */
@@ -701,7 +715,7 @@ export async function updateConversationLabelsDb(
   client?: any
 ): Promise<string[]> {
   await validateTenant(businessId, client);
-  const cleanLabels = Array.from(new Set(labels.map((l) => l.trim()).filter(Boolean)));
+  const cleanLabels = normalizeConversationLabels(labels);
 
   let supabase = client;
   if (!supabase) {
@@ -713,21 +727,17 @@ export async function updateConversationLabelsDb(
   }
 
   if (supabase) {
-    try {
-      const { error } = await supabase
-        .from("wa_conversations")
-        .update({
-          labels: cleanLabels,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", conversationId)
-        .eq("business_id", businessId);
+    const { error } = await supabase
+      .from("wa_conversations")
+      .update({
+        labels: cleanLabels,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", conversationId)
+      .eq("business_id", businessId);
 
-      if (error) {
-        console.warn("updateConversationLabelsDb Supabase update failed:", error.message);
-      }
-    } catch (err: any) {
-      console.warn("updateConversationLabelsDb exception:", err?.message);
+    if (error) {
+      throw new Error(`Failed to update conversation labels: ${error.message}`);
     }
   }
 

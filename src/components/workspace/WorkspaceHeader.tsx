@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { Sparkles, HeartHandshake, ShieldCheck, User, Menu, X } from "lucide-react";
 import { Business, UserProfile } from "@/types/database";
@@ -12,6 +12,7 @@ import { SignOutButton } from "@/components/auth/SignOutButton";
 interface WorkspaceHeaderProps {
   business: Business;
   user: UserProfile;
+  logoUrl?: string | null;
   onToggleMobileMenu?: () => void;
   isMobileMenuOpen?: boolean;
 }
@@ -19,10 +20,31 @@ interface WorkspaceHeaderProps {
 export function WorkspaceHeader({
   business,
   user,
+  logoUrl = null,
   onToggleMobileMenu,
   isMobileMenuOpen,
 }: WorkspaceHeaderProps) {
   const isAstrology = business.slug === "astrology";
+  const [activeLogoUrl, setActiveLogoUrl] = useState<string | null>(logoUrl);
+  const [logoError, setLogoError] = useState(false);
+
+  useEffect(() => {
+    setActiveLogoUrl(logoUrl);
+    setLogoError(false);
+  }, [logoUrl, business.id]);
+
+  useEffect(() => {
+    const handleLogoUpdated = (e: any) => {
+      if (e?.detail?.businessId === business.id) {
+        setActiveLogoUrl(e.detail.logoUrl ?? null);
+        setLogoError(false);
+      }
+    };
+    if (typeof window !== "undefined") {
+      window.addEventListener("workspace:logo-updated", handleLogoUpdated);
+      return () => window.removeEventListener("workspace:logo-updated", handleLogoUpdated);
+    }
+  }, [business.id]);
 
   return (
     <header className="sticky top-0 z-30 flex h-16 w-full items-center justify-between border-b border-slate-200 bg-white/95 px-4 sm:px-6 backdrop-blur supports-[backdrop-filter]:bg-white/80">
@@ -43,19 +65,30 @@ export function WorkspaceHeader({
           </button>
         )}
 
-        <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
-            isAstrology
-              ? "bg-purple-100 text-purple-700 border border-purple-200"
-              : "bg-rose-100 text-rose-700 border border-rose-200"
-          }`}
-        >
-          {isAstrology ? (
-            <Sparkles className="h-5 w-5" />
-          ) : (
-            <HeartHandshake className="h-5 w-5" />
-          )}
-        </div>
+        {activeLogoUrl && !logoError ? (
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white overflow-hidden p-0.5 shadow-2xs">
+            <img
+              src={activeLogoUrl}
+              alt={`${business.name} logo`}
+              onError={() => setLogoError(true)}
+              className="h-full w-full object-contain rounded-md"
+            />
+          </div>
+        ) : (
+          <div
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+              isAstrology
+                ? "bg-purple-100 text-purple-700 border border-purple-200"
+                : "bg-rose-100 text-rose-700 border border-rose-200"
+            }`}
+          >
+            {isAstrology ? (
+              <Sparkles className="h-5 w-5" />
+            ) : (
+              <HeartHandshake className="h-5 w-5" />
+            )}
+          </div>
+        )}
 
         <div>
           <div className="flex items-center gap-1.5 sm:gap-2">
@@ -86,7 +119,7 @@ export function WorkspaceHeader({
         <SwitchBusinessButton currentBusinessName={business.name} />
 
         {/* Internal Notification Bell */}
-        <NotificationBell business={business} />
+        <NotificationBell business={business} userId={user.id} />
 
         {/* User Pill */}
         <div className="flex items-center gap-2 pl-1 border-r border-slate-200 pr-2">

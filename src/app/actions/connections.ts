@@ -34,7 +34,12 @@ import {
   CreateWhatsAppConnectionSchema,
   UpdateBusinessSettingsSchema,
   UpdateWhatsAppConnectionSchema,
+  UploadBusinessLogoSchema,
 } from "@/lib/validation/schemas";
+import {
+  deleteBusinessLogoFile,
+  storeBusinessLogoFile,
+} from "@/lib/media/storage";
 
 /**
  * Fetch WhatsApp connections for a specific business workspace.
@@ -239,5 +244,124 @@ export async function updateBusinessSettingsAction(
     return { success: true, data: updated };
   } catch (err: any) {
     return { success: false, error: err.message || "Failed to update business settings." };
+  }
+}
+
+/**
+ * Upload a custom business logo (PNG, JPEG, WebP, SVG) to tenant-scoped Storage.
+ */
+export async function uploadBusinessLogoAction(input: {
+  businessSlug: string;
+  filename: string;
+  mimeType: string;
+  fileSize: number;
+  base64Data: string;
+}): Promise<{ success: boolean; logoUrl?: string; data?: BusinessSettings; error?: string }> {
+  try {
+    const parsed = UploadBusinessLogoSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        success: false,
+        error: parsed.error.issues[0]?.message || "Invalid logo upload parameters.",
+      };
+    }
+
+    const { businessSlug, filename, mimeType, base64Data } = parsed.data;
+    const { business, membership } = await validateBusinessAccess(businessSlug);
+
+    if (membership.role !== "owner" && membership.role !== "admin") {
+      return {
+        success: false,
+        error: "Only workspace owners and administrators can update business branding.",
+      };
+    }
+
+    const rateLimit = rateLimitSensitiveAction(business.id, "upload_business_logo");
+    if (!rateLimit.success) {
+      return {
+        success: false,
+        error: `Rate limit exceeded: Please wait ${rateLimit.retryAfterSeconds}s before retrying.`,
+      };
+    }
+
+    const buffer = Buffer.from(base64Data, "base64");
+    const currentSettings = isSupabaseConfigured()
+      ? await getBusinessSettingsDb(business.id)
+      : getBusinessSettings(business.id);
+
+    const stored = await storeBusinessLogoFile({
+      businessId: business.id,
+      fileBuffer: buffer,
+      mimeType,
+      originalFilename: filename,
+    });
+
+    try {
+      const updated = isSupabaseConfigured()
+        ? await updateBusinessSettingsDb(business.id, { logo_url: stored.logoUrl })
+        : updateBusinessSettings(business.id, { logo_url: stored.logoUrl });
+
+      if (currentSettings.logo_url && currentSettings.logo_url !== stored.logoUrl) {
+        await deleteBusinessLogoFile(business.id, currentSettings.logo_url);
+      }
+
+      revalidatePath(`/workspace/${businessSlug}/settings`);
+      revalidatePath(`/workspace/${businessSlug}/dashboard`);
+      revalidatePath("/select-business");
+      return { success: true, logoUrl: stored.logoUrl, data: updated };
+    } catch (dbErr: any) {
+      await deleteBusinessLogoFile(business.id, stored.storagePath);
+      return {
+        success: false,
+        error: dbErr?.message || "Failed to save business logo URL in settings.",
+      };
+    }
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to upload business logo." };
+  }
+}
+
+/**
+ * Remove custom uploaded business logo and revert to text monogram badge.
+ */
+export async function removeBusinessLogoAction(
+  businessSlug: string
+): Promise<{ success: boolean; data?: BusinessSettings; error?: string }> {
+  try {
+    const { business, membership } = await validateBusinessAccess(businessSlug);
+
+    if (membership.role !== "owner" && membership.role !== "admin") {
+      return {
+        success: false,
+        error: "Only workspace owners and administrators can remove business branding.",
+      };
+    }
+
+    const rateLimit = rateLimitSensitiveAction(business.id, "remove_business_logo");
+    if (!rateLimit.success) {
+      return {
+        success: false,
+        error: `Rate limit exceeded: Please wait ${rateLimit.retryAfterSeconds}s before retrying.`,
+      };
+    }
+
+    const currentSettings = isSupabaseConfigured()
+      ? await getBusinessSettingsDb(business.id)
+      : getBusinessSettings(business.id);
+
+    const updated = isSupabaseConfigured()
+      ? await updateBusinessSettingsDb(business.id, { logo_url: null })
+      : updateBusinessSettings(business.id, { logo_url: null });
+
+    if (currentSettings.logo_url) {
+      await deleteBusinessLogoFile(business.id, currentSettings.logo_url);
+    }
+
+    revalidatePath(`/workspace/${businessSlug}/settings`);
+    revalidatePath(`/workspace/${businessSlug}/dashboard`);
+    revalidatePath("/select-business");
+    return { success: true, data: updated };
+  } catch (err: any) {
+    return { success: false, error: err?.message || "Failed to remove business logo." };
   }
 }

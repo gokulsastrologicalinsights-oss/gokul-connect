@@ -2,6 +2,13 @@ import { SupportedMediaType } from "@/types/database";
 import crypto from "crypto";
 
 export const MEDIA_STORAGE_BUCKET = "whatsapp-media";
+export const MAX_LOGO_SIZE_BYTES = 2 * 1024 * 1024; // 2 MB
+export const ALLOWED_LOGO_MIME_TYPES = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/svg+xml",
+] as const;
 
 /**
  * Meta WhatsApp Cloud API Maximum File Size Limits
@@ -148,6 +155,106 @@ export function buildBusinessStoragePath(
   return `businesses/${businessId}/conversations/${conversationId}/${fileId}-${sanitizedFilename}`;
 }
 
+export function buildBusinessLogoStoragePath(
+  businessId: string,
+  fileId: string,
+  sanitizedFilename: string
+): string {
+  return `businesses/${businessId}/branding/${fileId}-${sanitizedFilename}`;
+}
+
+function inferImageMimeFromPath(storagePath: string): string | null {
+  const lower = storagePath.toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".svg")) return "image/svg+xml";
+  return null;
+}
+
+/**
+ * Validate a custom business logo file (PNG, JPEG, WEBP, SVG) with magic-byte & SVG XSS safety checks.
+ */
+export function validateBusinessLogoFile(
+  mimeType: string,
+  fileBuffer: Buffer,
+  filename: string
+): { valid: boolean; error?: string; normalizedMime?: string } {
+  const normalizedMime = (mimeType || "").toLowerCase().trim();
+  if (!(ALLOWED_LOGO_MIME_TYPES as readonly string[]).includes(normalizedMime)) {
+    return {
+      valid: false,
+      error: `Unsupported logo format "${mimeType}". Allowed formats: PNG, JPEG, WebP, SVG.`,
+    };
+  }
+
+  if (!fileBuffer || fileBuffer.length <= 0) {
+    return { valid: false, error: "Logo file is empty (0 bytes)." };
+  }
+
+  if (fileBuffer.length > MAX_LOGO_SIZE_BYTES) {
+    const actualMb = (fileBuffer.length / (1024 * 1024)).toFixed(2);
+    return {
+      valid: false,
+      error: `Logo file size (${actualMb} MB) exceeds maximum allowed limit of 2 MB.`,
+    };
+  }
+
+  if (normalizedMime === "image/png") {
+    const isPng =
+      fileBuffer.length >= 4 &&
+      fileBuffer[0] === 0x89 &&
+      fileBuffer[1] === 0x50 &&
+      fileBuffer[2] === 0x4e &&
+      fileBuffer[3] === 0x47;
+    if (!isPng) {
+      return { valid: false, error: "Invalid PNG file signature." };
+    }
+  } else if (normalizedMime === "image/jpeg") {
+    const isJpg =
+      fileBuffer.length >= 3 &&
+      fileBuffer[0] === 0xff &&
+      fileBuffer[1] === 0xd8 &&
+      fileBuffer[2] === 0xff;
+    if (!isJpg) {
+      return { valid: false, error: "Invalid JPEG file signature." };
+    }
+  } else if (normalizedMime === "image/webp") {
+    const isWebp =
+      fileBuffer.length >= 12 &&
+      fileBuffer.subarray(0, 4).toString("ascii") === "RIFF" &&
+      fileBuffer.subarray(8, 12).toString("ascii") === "WEBP";
+    if (!isWebp) {
+      return { valid: false, error: "Invalid WebP file signature." };
+    }
+  } else if (normalizedMime === "image/svg+xml") {
+    const text = fileBuffer.toString("utf8");
+    if (!/<svg[\s>]/i.test(text)) {
+      return { valid: false, error: "Invalid SVG file: missing <svg> root element." };
+    }
+    const unsafePatterns = [
+      /<script\b/i,
+      /<foreignObject\b/i,
+      /<iframe\b/i,
+      /<object\b/i,
+      /<embed\b/i,
+      /\son[a-z]+\s*=/i,
+      /javascript\s*:/i,
+      /vbscript\s*:/i,
+    ];
+    for (const pattern of unsafePatterns) {
+      if (pattern.test(text)) {
+        return {
+          valid: false,
+          error: "SVG contains prohibited active scripting or embedded HTML elements.",
+        };
+      }
+    }
+  }
+
+  return { valid: true, normalizedMime };
+}
+
 /**
  * Verify storage path matches business tenant boundary
  */
@@ -171,7 +278,12 @@ interface StoredMediaItem {
   createdAt: string;
 }
 
-const inMemoryMediaStore = new Map<string, StoredMediaItem>();
+const globalMediaRef = globalThis as unknown as {
+  __gokulInMemoryMediaStore?: Map<string, StoredMediaItem>;
+};
+const inMemoryMediaStore: Map<string, StoredMediaItem> =
+  globalMediaRef.__gokulInMemoryMediaStore ??
+  (globalMediaRef.__gokulInMemoryMediaStore = new Map<string, StoredMediaItem>());
 
 export function clearInMemoryMediaStore(): void {
   inMemoryMediaStore.clear();
@@ -280,9 +392,10 @@ export async function getStoredMediaFile(
       if (!error && data) {
         const arrayBuffer = await data.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
+        const rawType = data.type && data.type !== "application/octet-stream" ? data.type : null;
         return {
           buffer,
-          mimeType: data.type || "application/octet-stream",
+          mimeType: rawType || inferImageMimeFromPath(storagePath) || "application/octet-stream",
           size: buffer.length,
         };
       }
@@ -333,6 +446,117 @@ export async function createSignedMediaUrl(
     .digest("hex");
 
   return `/api/media/download?path=${encodeURIComponent(storagePath)}&biz=${encodeURIComponent(businessId)}&exp=${expiresAt}&sig=${signature}`;
+}
+
+/**
+ * Store a custom business logo file under tenant-isolated `businesses/<id>/branding/`.
+ */
+export async function storeBusinessLogoFile(params: {
+  businessId: string;
+  fileBuffer: Buffer;
+  mimeType: string;
+  originalFilename: string;
+}): Promise<{
+  fileId: string;
+  storagePath: string;
+  fileSize: number;
+  sanitizedFilename: string;
+  logoUrl: string;
+}> {
+  const { businessId, fileBuffer, mimeType, originalFilename } = params;
+  const validation = validateBusinessLogoFile(mimeType, fileBuffer, originalFilename);
+  if (!validation.valid) {
+    throw new Error(validation.error || "Invalid business logo file.");
+  }
+
+  const fileId = crypto.randomUUID();
+  const sanitizedFilename = sanitizeFilename(originalFilename);
+  const storagePath = buildBusinessLogoStoragePath(businessId, fileId, sanitizedFilename);
+
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const { createAdminClient } = await import("@/lib/supabase/admin");
+      const supabaseAdmin = createAdminClient();
+
+      let { error: uploadError } = await supabaseAdmin.storage
+        .from(MEDIA_STORAGE_BUCKET)
+        .upload(storagePath, fileBuffer, {
+          contentType: mimeType,
+          upsert: true,
+        });
+
+      if (uploadError && /bucket.*not found/i.test(uploadError.message || "")) {
+        await supabaseAdmin.storage.createBucket(MEDIA_STORAGE_BUCKET, {
+          public: false,
+          fileSizeLimit: 20 * 1024 * 1024,
+        });
+        const retryRes = await supabaseAdmin.storage
+          .from(MEDIA_STORAGE_BUCKET)
+          .upload(storagePath, fileBuffer, {
+            contentType: mimeType,
+            upsert: true,
+          });
+        uploadError = retryRes.error;
+      }
+    } catch {
+      // Fallback to in-memory store in local/test environment
+    }
+  }
+
+  inMemoryMediaStore.set(storagePath, {
+    buffer: fileBuffer,
+    mimeType,
+    size: fileBuffer.length,
+    businessId,
+    storagePath,
+    createdAt: new Date().toISOString(),
+  });
+
+  const logoUrl = `/api/media/download?path=${encodeURIComponent(storagePath)}&biz=${encodeURIComponent(businessId)}`;
+  return {
+    fileId,
+    storagePath,
+    fileSize: fileBuffer.length,
+    sanitizedFilename,
+    logoUrl,
+  };
+}
+
+/**
+ * Delete a previously stored business logo file (best-effort cleanup).
+ */
+export async function deleteBusinessLogoFile(
+  businessId: string,
+  logoUrlOrPath: string
+): Promise<void> {
+  if (!logoUrlOrPath) return;
+
+  let storagePath = logoUrlOrPath;
+  if (logoUrlOrPath.includes("/api/media/download")) {
+    try {
+      const parsed = new URL(logoUrlOrPath, "http://localhost");
+      const pathParam = parsed.searchParams.get("path");
+      if (pathParam) storagePath = pathParam;
+    } catch {
+      return;
+    }
+  }
+
+  if (!verifyTenantStoragePath(businessId, storagePath)) {
+    return;
+  }
+
+  inMemoryMediaStore.delete(storagePath);
+
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    try {
+      const { createAdminClient } = await import("@/lib/supabase/admin");
+      const supabaseAdmin = createAdminClient();
+      await supabaseAdmin.storage.from(MEDIA_STORAGE_BUCKET).remove([storagePath]);
+    } catch {
+      // Best effort
+    }
+  }
 }
 
 /**

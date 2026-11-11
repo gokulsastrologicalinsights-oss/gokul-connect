@@ -88,15 +88,25 @@ export async function GET(request: NextRequest) {
     // Strip uuid prefix if present: uuid-filename
     const filename = filenamePart.replace(/^[0-9a-fA-F-]{36}-/, "");
 
+    const mimeType = file.mimeType || "application/octet-stream";
+    const isBranding = path.startsWith(`businesses/${biz}/branding/`);
+    const headers: Record<string, string> = {
+      "Content-Type": mimeType,
+      "Content-Length": String(file.size),
+      "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
+      "Cache-Control": isBranding
+        ? "private, max-age=300"
+        : "private, no-cache, no-store, must-revalidate",
+      "X-Content-Type-Options": "nosniff",
+    };
+
+    if (mimeType === "image/svg+xml") {
+      headers["Content-Security-Policy"] = "sandbox; default-src 'none'; style-src 'unsafe-inline'";
+    }
+
     return new NextResponse(new Uint8Array(file.buffer), {
       status: 200,
-      headers: {
-        "Content-Type": file.mimeType || "application/octet-stream",
-        "Content-Length": String(file.size),
-        "Content-Disposition": `inline; filename="${encodeURIComponent(filename)}"`,
-        "Cache-Control": "private, no-cache, no-store, must-revalidate",
-        "X-Content-Type-Options": "nosniff",
-      },
+      headers,
     });
   } catch (err: any) {
     return new NextResponse(err.message || "Failed to retrieve media file.", {

@@ -127,15 +127,25 @@ export default async function BusinessSelectionPage({
                 <div>
                   {/* Business Icon & Status Header */}
                   <div className="flex items-center justify-between mb-6">
-                    <div
-                      className={`h-16 w-16 rounded-2xl ${accentBg} border ${accentBorder} flex items-center justify-center ${accentText} shadow-inner`}
-                    >
-                      {isAstrology ? (
-                        <Sparkles className="h-8 w-8" />
-                      ) : (
-                        <HeartHandshake className="h-8 w-8" />
-                      )}
-                    </div>
+                    {business.logo_url ? (
+                      <div className="h-16 w-16 rounded-2xl bg-white border border-slate-700 flex items-center justify-center overflow-hidden p-1.5 shadow-inner">
+                        <img
+                          src={business.logo_url}
+                          alt={`${business.name} logo`}
+                          className="h-full w-full object-contain rounded-xl"
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className={`h-16 w-16 rounded-2xl ${accentBg} border ${accentBorder} flex items-center justify-center ${accentText} shadow-inner`}
+                      >
+                        {isAstrology ? (
+                          <Sparkles className="h-8 w-8" />
+                        ) : (
+                          <HeartHandshake className="h-8 w-8" />
+                        )}
+                      </div>
+                    )}
 
                     <div className="flex flex-col items-end gap-1.5">
                       {business.stats?.connectionStatus === "connected" ? (

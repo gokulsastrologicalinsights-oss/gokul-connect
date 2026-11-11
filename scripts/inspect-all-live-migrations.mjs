@@ -46,10 +46,12 @@ async function inspectSchema() {
 
   // Check 016: team management tables
   const { error: m16Err1 } = await adminClient.from("conversation_assignment_logs").select("id").limit(1);
-  const { error: m16Err2 } = await adminClient.from("team_invitations").select("id").limit(1);
-  const { error: m16Err3 } = await adminClient.from("business_audit_logs").select("id").limit(1);
+  const { error: m16Err2 } = await adminClient.from("business_invitations").select("id").limit(1);
+  const { error: m16Err3 } = await adminClient.from("team_activity_logs").select("id").limit(1);
   results["016_team_management"] = !m16Err1 && !m16Err2 && !m16Err3;
   if (m16Err1) console.log("016 error:", m16Err1.message);
+  else if (m16Err2) console.log("016 error:", m16Err2.message);
+  else if (m16Err3) console.log("016 error:", m16Err3.message);
 
   // Check 017: media messaging
   const { error: m17Err1 } = await adminClient.from("wa_media_files").select("id").limit(1);
@@ -75,10 +77,11 @@ async function inspectSchema() {
   if (m20Err1) console.log("020 error:", m20Err1.message);
 
   // Check 021: notification center
-  const { error: m21Err1 } = await adminClient.from("internal_notifications").select("id").limit(1);
-  const { error: m21Err2 } = await adminClient.from("user_notification_preferences").select("id").limit(1);
+  const { error: m21Err1 } = await adminClient.from("user_notification_preferences").select("id").limit(1);
+  const { error: m21Err2 } = await adminClient.from("crm_follow_up_reminders").select("dedup_key").limit(1);
   results["021_notification_center"] = !m21Err1 && !m21Err2;
   if (m21Err1) console.log("021 error:", m21Err1.message);
+  else if (m21Err2) console.log("021 error:", m21Err2.message);
 
   // Check 022: visual flows
   const { error: m22Err } = await adminClient.from("wa_visual_flows").select("id").limit(1);
@@ -86,9 +89,23 @@ async function inspectSchema() {
   if (m22Err) console.log("022 error:", m22Err.message);
 
   // Check 023: operational reliability
-  const { error: m23Err } = await adminClient.from("system_health_metrics").select("id").limit(1);
+  const { error: m23Err } = await adminClient.from("worker_execution_runs").select("id").limit(1);
   results["023_operational_reliability"] = !m23Err;
   if (m23Err) console.log("023 error:", m23Err.message);
+
+  // Check 024: conversation labels & distributed cron locks
+  const { error: m24Err1 } = await adminClient.from("wa_conversations").select("labels").limit(1);
+  const { error: m24Err2 } = await adminClient.from("cron_locks").select("lock_key").limit(1);
+  results["024_labels_and_cron_locks"] = !m24Err1 && !m24Err2;
+  if (m24Err1) console.log("024 error:", m24Err1.message);
+  else if (m24Err2) console.log("024 error:", m24Err2.message);
+
+  // Check 025: optional UI enhancements (canned responses & custom business logo URL)
+  const { error: m25Err1 } = await adminClient.from("wa_canned_responses").select("id").limit(1);
+  const { error: m25Err2 } = await adminClient.from("business_settings").select("logo_url").limit(1);
+  results["025_optional_ui_enhancements"] = !m25Err1 && !m25Err2;
+  if (m25Err1) console.log("025 error:", m25Err1.message);
+  else if (m25Err2) console.log("025 error:", m25Err2.message);
 
   console.log("MIGRATION STATUS SUMMARY (Live Database):");
   for (const [key, applied] of Object.entries(results)) {

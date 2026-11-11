@@ -12,8 +12,9 @@ import {
 } from "@/lib/connections/store";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { InboxClient } from "@/components/inbox/InboxClient";
-import { InboxFolder, WhatsAppMessage } from "@/types/database";
+import { InboxFolder, WhatsAppMessage, CannedResponse } from "@/types/database";
 import { getTeamMembers } from "@/lib/team/store";
+import { listCannedResponsesDb } from "@/lib/inbox/canned-responses";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ export default async function WhatsAppInboxPage({
   searchParams,
 }: {
   params: Promise<{ businessSlug: string }>;
-  searchParams?: Promise<{ c?: string; folder?: string; line?: string }>;
+  searchParams?: Promise<{ c?: string; folder?: string; line?: string; label?: string }>;
 }) {
   const { businessSlug } = await params;
   const { business, user, membership } = await validateBusinessAccess(businessSlug);
@@ -31,9 +32,20 @@ export default async function WhatsAppInboxPage({
   const requestedConvId = resolvedSearchParams?.c;
   const requestedFolder = resolvedSearchParams?.folder as InboxFolder | undefined;
   const requestedLine = resolvedSearchParams?.line;
+  const requestedLabel = resolvedSearchParams?.label;
 
   // Fetch team members for real agent assignment and filtering
   const teamMembers = await getTeamMembers(business.id);
+
+  // Fetch quick replies / canned responses scoped to this business
+  let initialCannedResponses: CannedResponse[] = [];
+  try {
+    initialCannedResponses = await listCannedResponsesDb(business.id, {
+      businessSlug: business.slug,
+    });
+  } catch {
+    initialCannedResponses = [];
+  }
 
   // Fetch WhatsApp connections strictly scoped to this verified business
   const connections = isSupabaseConfigured()
@@ -98,6 +110,8 @@ export default async function WhatsAppInboxPage({
       initialSelectedConversationId={targetConvId}
       initialFolder={requestedFolder}
       initialConnectionId={requestedLine}
+      initialLabel={requestedLabel}
+      initialCannedResponses={initialCannedResponses}
       currentUser={user}
       currentMembership={membership}
       teamMembers={teamMembers}
