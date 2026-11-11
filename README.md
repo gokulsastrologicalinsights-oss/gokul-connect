@@ -103,6 +103,34 @@ All 92 unit, multi-tenant isolation, webhook security, and database integration 
 
 ---
 
+## ⏱️ Background Scheduling & Cron Jobs (cron-job.org)
+
+To bypass Vercel Hobby plan limitations (which restricts native crons to a maximum of 2 jobs running only once per day), scheduled background jobs are externally triggered via **[cron-job.org](https://cron-job.org)**.
+
+All cron endpoints are secured using fail-closed Bearer token authentication matching the server-side `CRON_SECRET` environment variable and protected against concurrency overlap with PostgreSQL distributed locks.
+
+### Scheduled Endpoints & Intervals
+
+| Endpoint | Schedule / Interval | Purpose |
+| :--- | :--- | :--- |
+| `/api/cron/process-automation-jobs` | Every 2 minutes (`*/2 * * * *`) | Processes due automation queue jobs, runs message follow-ups, and prunes stale records |
+| `/api/cron/process-scheduled-messages` | Every 5 minutes (`*/5 * * * *`) | Dispatches due pre-scheduled WhatsApp messages |
+| `/api/cron/process-campaigns` | Every 10 minutes (`*/10 * * * *`) | Processes broadcast campaigns and batch delivery pipelines |
+| `/api/cron/process-crm-reminders` | Every 15 minutes (`*/15 * * * *`) | Generates scheduled CRM reminders and lead follow-up notifications |
+
+### Security & Header Setup
+
+Every job configured on cron-job.org includes the authorization header:
+```http
+Authorization: Bearer <CRON_SECRET>
+```
+
+- **Fail-Closed Verification:** Constant-time SHA-256 buffer comparison (`verifyCronAuthorization`) rejects any unauthenticated requests with `401 Unauthorized`.
+- **Distributed Lock Guard:** PostgreSQL RPC lock acquisition ensures multi-instance concurrency safety across serverless invocations.
+- **Execution Limits:** Configured in `vercel.json` with `maxDuration: 60` for serverless execution stability.
+
+---
+
 ## 📁 Repository Structure
 
 ```
