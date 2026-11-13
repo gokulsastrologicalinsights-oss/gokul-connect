@@ -105,29 +105,31 @@ All 92 unit, multi-tenant isolation, webhook security, and database integration 
 
 ## ⏱️ Background Scheduling & Cron Jobs (cron-job.org)
 
-To bypass Vercel Hobby plan limitations (which restricts native crons to a maximum of 2 jobs running only once per day), scheduled background jobs are externally triggered via **[cron-job.org](https://cron-job.org)**.
+> [!IMPORTANT]
+> **Vercel Hobby Plan Compliance**: Vercel's free tier restricts native crons to at most 1–2 jobs running only once per day and will fail or block high-frequency schedules during deployment. Therefore, **native Vercel Crons are strictly omitted from `vercel.json`**. Instead, scheduled background workers are triggered externally via **[cron-job.org](https://cron-job.org)**.
 
 All cron endpoints are secured using fail-closed Bearer token authentication matching the server-side `CRON_SECRET` environment variable and protected against concurrency overlap with PostgreSQL distributed locks.
 
-### Scheduled Endpoints & Intervals
+### Scheduled Endpoints & Recommended Intervals on cron-job.org
 
 | Endpoint | Schedule / Interval | Purpose |
 | :--- | :--- | :--- |
-| `/api/cron/process-automation-jobs` | Every 2 minutes (`*/2 * * * *`) | Processes due automation queue jobs, runs message follow-ups, and prunes stale records |
-| `/api/cron/process-scheduled-messages` | Every 5 minutes (`*/5 * * * *`) | Dispatches due pre-scheduled WhatsApp messages |
+| `/api/cron/process-automation-jobs` | Every 1–2 minutes (`* * * * *` or `*/2 * * * *`) | Processes due automation queue jobs, message follow-ups, and prunes stale records |
+| `/api/cron/process-scheduled-messages` | Every 1–5 minutes (`* * * * *` or `*/5 * * * *`) | Dispatches due pre-scheduled WhatsApp messages |
+| `/api/cron/process-crm-reminders` | Every 5–15 minutes (`*/5 * * * *` or `*/15 * * * *`) | Generates scheduled CRM reminders and lead follow-up notifications |
 | `/api/cron/process-campaigns` | Every 10 minutes (`*/10 * * * *`) | Processes broadcast campaigns and batch delivery pipelines |
-| `/api/cron/process-crm-reminders` | Every 15 minutes (`*/15 * * * *`) | Generates scheduled CRM reminders and lead follow-up notifications |
 
-### Security & Header Setup
+### Security & Header Setup in cron-job.org
 
-Every job configured on cron-job.org includes the authorization header:
+Every job configured on **cron-job.org** must send an authorization header:
 ```http
 Authorization: Bearer <CRON_SECRET>
 ```
 
 - **Fail-Closed Verification:** Constant-time SHA-256 buffer comparison (`verifyCronAuthorization`) rejects any unauthenticated requests with `401 Unauthorized`.
-- **Distributed Lock Guard:** PostgreSQL RPC lock acquisition ensures multi-instance concurrency safety across serverless invocations.
-- **Execution Limits:** Configured in `vercel.json` with `maxDuration: 60` for serverless execution stability.
+- **Distributed Lock Guard:** PostgreSQL RPC `acquire_cron_lock` ensures multi-instance concurrency safety across serverless invocations.
+- **Execution Limits:** `vercel.json` specifies `maxDuration: 60` for `/api/cron/**/route.ts` to allow long-running batch runs without premature timeouts.
+- **Vercel Clean Configuration:** No `crons` key is present in `vercel.json`, allowing error-free deployment on the free Hobby plan.
 
 ---
 
