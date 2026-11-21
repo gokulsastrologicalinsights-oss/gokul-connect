@@ -103,7 +103,7 @@ export function ConversationListPanel({
   onClearLabelFilter,
 }: ConversationListPanelProps) {
   return (
-    <div className="w-80 sm:w-96 border-r border-slate-200 bg-white flex flex-col h-full flex-shrink-0">
+    <div className="w-full md:w-80 xl:w-96 border-r border-slate-200 bg-white flex flex-col h-full shrink-0">
       {/* Search & Folder Header */}
       <div className="p-3 border-b border-slate-200 space-y-2">
         <div className="flex items-center justify-between">

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Business, UserProfile } from "@/types/database";
 import { WorkspaceHeader } from "./WorkspaceHeader";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
@@ -20,9 +21,17 @@ export function WorkspaceLayoutClient({
   children,
 }: WorkspaceLayoutClientProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const pathname = usePathname() || "";
+  const isFullBleed =
+    pathname.includes("/inbox") ||
+    pathname.includes("/flows");
 
   return (
-    <div className="min-h-[100dvh] bg-slate-50 flex flex-col overflow-x-hidden">
+    <div
+      className={`bg-slate-50 flex flex-col overflow-x-hidden ${
+        isFullBleed ? "h-[100dvh] overflow-hidden" : "min-h-[100dvh]"
+      }`}
+    >
       {/* Workspace Header */}
       <WorkspaceHeader
         business={business}
@@ -35,7 +44,7 @@ export function WorkspaceLayoutClient({
       {/* Main Container */}
       <div className="flex flex-1 overflow-hidden relative">
         {/* Desktop Sidebar (visible on md+) */}
-        <div className="hidden md:flex">
+        <div className="hidden md:flex shrink-0">
           <WorkspaceSidebar slug={business.slug} businessName={business.name} />
         </div>
 
@@ -68,12 +77,18 @@ export function WorkspaceLayoutClient({
           </div>
         )}
 
-        {/* Main Content Area: Full width on mobile, flexible on desktop */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
-          <div className="mx-auto max-w-7xl">
+        {/* Main Content Area */}
+        {isFullBleed ? (
+          <main className="flex-1 overflow-hidden flex flex-col min-w-0 w-full h-[calc(100dvh-4rem)]">
             {children}
-          </div>
-        </main>
+          </main>
+        ) : (
+          <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">
+            <div className="mx-auto max-w-7xl">
+              {children}
+            </div>
+          </main>
+        )}
       </div>
     </div>
   );

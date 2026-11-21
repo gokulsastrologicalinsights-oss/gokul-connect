@@ -1039,7 +1039,7 @@ export function InboxClient({
   };
 
   return (
-    <div className="flex-1 flex overflow-hidden h-[calc(100dvh-4rem)] bg-white relative">
+    <div className="flex-1 min-w-0 w-full flex overflow-hidden h-full bg-white relative">
       {/* Mobile Slide-Over Drawer for Folders & WhatsApp Lines (visible on < lg) */}
       {mobileFoldersOpen && (
         <div
@@ -1100,7 +1100,7 @@ export function InboxClient({
       )}
 
       {/* Panel 1: Left Navigation Folders (Desktop & Large Screens) */}
-      <div className="hidden lg:flex">
+      <div className="hidden lg:flex shrink-0">
         <ConversationNavPanel
           activeFolder={activeFolder}
           onSelectFolder={(f) => {
@@ -1128,7 +1128,7 @@ export function InboxClient({
 
       {/* Panel 2: Middle Customer Conversation List */}
       <div
-        className={`flex-shrink-0 ${
+        className={`shrink-0 ${
           showMobileChat ? "hidden md:flex" : "flex w-full md:w-auto"
         }`}
       >
@@ -1157,7 +1157,7 @@ export function InboxClient({
 
       {/* Panel 3: Right Chat Window with Live Chronological Messages */}
       <div
-        className={`flex-1 flex flex-col h-full ${
+        className={`flex-1 min-w-0 flex flex-col h-full ${
           !showMobileChat ? "hidden md:flex" : "flex w-full"
         }`}
       >

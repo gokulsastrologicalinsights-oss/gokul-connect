@@ -219,6 +219,7 @@ export function ChatWindowPanel({
   const [showCannedModal, setShowCannedModal] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const labelPickerRef = useRef<HTMLDivElement>(null);
@@ -279,7 +280,14 @@ export function ChatWindowPanel({
   // Auto-scroll to bottom of messages
   useEffect(() => {
     if (!isLoadingMessages && !isLoadingOlder) {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      if (messagesContainerRef.current) {
+        messagesContainerRef.current.scrollTo({
+          top: messagesContainerRef.current.scrollHeight,
+          behavior: "smooth",
+        });
+      } else {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end", inline: "nearest" });
+      }
     }
   }, [messages.length, isLoadingMessages, isLoadingOlder]);
 
@@ -685,6 +693,8 @@ export function ChatWindowPanel({
   const selectedTemplate = useMemo(() => {
     return (
       templatesList.find((t) => t.template_name === selectedTemplateName) ||
+      templatesList.find((t) => t.template_name === "reengage_customer") ||
+      templatesList.find((t) => t.template_name !== "hello_world") ||
       templatesList[0]
     );
   }, [templatesList, selectedTemplateName]);
@@ -766,7 +776,14 @@ export function ChatWindowPanel({
         setShowTemplateModal(false);
         setComposerError(null);
       } else {
-        setComposerError(res.error || "Failed to dispatch WhatsApp template.");
+        const errMsg = res.error || "Failed to dispatch WhatsApp template.";
+        if (errMsg.includes("131058") || errMsg.toLowerCase().includes("hello world templates can only be sent")) {
+          setComposerError(
+            "Meta Policy Restriction (#131058): 'hello_world' is a Meta sample template and can only be sent from Meta test numbers. Please choose an approved business template like 'reengage_customer' to re-engage this customer."
+          );
+        } else {
+          setComposerError(errMsg);
+        }
       }
     } catch (err: any) {
       setComposerError(err.message || "Template dispatch error.");
@@ -949,7 +966,7 @@ export function ChatWindowPanel({
       </header>
 
       {/* Main Conversation Body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 space-y-4">
         {/* Customer Profile & Window Status Bar */}
         <div className="p-3 bg-white rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
           <div className="flex items-center gap-2">
@@ -1907,10 +1924,17 @@ export function ChatWindowPanel({
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2 mb-1">
-                            <span className="font-semibold text-slate-900 font-mono text-[11px]">
-                              {tpl.template_name}
-                            </span>
-                            <div className="flex items-center gap-1.5">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="font-semibold text-slate-900 font-mono text-[11px] truncate">
+                                {tpl.template_name}
+                              </span>
+                              {tpl.template_name === "hello_world" && (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-semibold bg-amber-50 text-amber-700 border border-amber-200 shrink-0">
+                                  Test # Only
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
                               <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-100 text-slate-600">
                                 {tpl.category}
                               </span>
