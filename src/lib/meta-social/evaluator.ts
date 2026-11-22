@@ -14,7 +14,7 @@ export function normalizeSocialText(input: string | null | undefined): string {
     .normalize("NFKC")
     .toLowerCase()
     .replace(/[\u200B-\u200D\uFEFF]/g, "") // remove zero-width spaces
-    .replace(/[.,/#!$%^&*;:{}=\-_`~()?]/g, " ") // replace punctuation with spaces
+    .replace(/[.,/#!$%^&*;:{}=\-_`~()?\[\]"'+|\\<>@]/g, " ") // replace punctuation, quotes, brackets with spaces
     .replace(/\s+/g, " ")
     .trim();
 }

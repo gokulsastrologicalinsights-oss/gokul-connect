@@ -54,6 +54,7 @@ export async function saveSocialConnectionAction(
     autoReplyComments?: boolean;
     autoDmOnComment?: boolean;
     defaultCommentReply?: string;
+    defaultDmReply?: string;
   }
 ): Promise<{ success: boolean; data?: MetaSocialConnection; error?: string }> {
   try {
@@ -66,13 +67,20 @@ export async function saveSocialConnectionAction(
     if (!params.accountName?.trim()) throw new Error("Account Name is required.");
     if (!params.accessToken?.trim()) throw new Error("Access Token is required.");
 
+    // Validate Instagram linked Facebook Page requirement
+    if (params.platform === "instagram" && !params.pageId?.trim()) {
+      throw new Error(
+        "Connected Facebook Page ID (pageId) is strictly required for Instagram accounts to support Meta Private Replies."
+      );
+    }
+
     const supabase = createAdminClient();
 
     // 1. Encrypt Access Token using AES-256-GCM
     const encrypted = encryptSecret(params.accessToken.trim());
     const credentialRef = `sec_social_${business.id.slice(0, 8)}_${Date.now()}`;
 
-    // 2. Upsert connection record
+    // 2. Upsert connection record with global (platform, account_id) conflict handling
     const { data: conn, error: connErr } = await supabase
       .from("meta_social_connections")
       .upsert(
@@ -92,9 +100,12 @@ export async function saveSocialConnectionAction(
           default_comment_reply:
             params.defaultCommentReply?.trim() ||
             "Thank you for your comment! We have sent details directly to your inbox.",
+          default_dm_reply:
+            params.defaultDmReply?.trim() ||
+            "வணக்கம்! எங்கள் சேவைகள் மற்றும் ஆலோசனை விவரங்களை இங்கே பகிர்கிறோம்.",
           updated_at: new Date().toISOString(),
         },
-        { onConflict: "business_id,platform,account_id" }
+        { onConflict: "platform,account_id" }
       )
       .select("*")
       .single();

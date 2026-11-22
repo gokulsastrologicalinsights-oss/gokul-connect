@@ -25,6 +25,8 @@ export interface MetaSocialConnection {
   auto_dm_on_comment: boolean;
   comment_dm_trigger_keywords: string[];
   default_comment_reply: string;
+  default_dm_reply?: string | null;
+  token_expires_at?: string | null;
   last_webhook_at?: string | null;
   last_reply_at?: string | null;
   metadata?: Record<string, unknown>;
@@ -69,8 +71,46 @@ export interface MetaSocialEvent {
   matched_rule_id?: string | null;
   reply_type?: 'dm_reply' | 'comment_public_reply' | 'comment_private_dm' | 'both' | 'none' | null;
   reply_content?: string | null;
+  public_reply_status?: 'none' | 'pending' | 'replied' | 'failed' | 'skipped' | null;
+  private_reply_status?: 'none' | 'pending' | 'replied' | 'failed' | 'skipped' | null;
+  public_reply_id?: string | null;
+  private_reply_id?: string | null;
   error_message?: string | null;
+  event_timestamp?: string | null;
   created_at: string;
+}
+
+export type MetaSocialDeliveryActionType =
+  | 'public_comment_reply'
+  | 'private_comment_reply'
+  | 'dm_reply';
+
+export type MetaSocialDeliveryStatus =
+  | 'pending'
+  | 'processing'
+  | 'succeeded'
+  | 'failed'
+  | 'retry_scheduled'
+  | 'permanently_failed';
+
+export interface MetaSocialDelivery {
+  id: string;
+  business_id: string;
+  event_id: string;
+  connection_id: string;
+  platform: MetaSocialPlatform;
+  action_type: MetaSocialDeliveryActionType;
+  recipient_id: string;
+  request_payload: Record<string, unknown>;
+  response_id?: string | null;
+  status: MetaSocialDeliveryStatus;
+  attempt_count: number;
+  max_attempts: number;
+  last_error?: string | null;
+  idempotency_key: string;
+  next_retry_at?: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 /**
@@ -88,4 +128,5 @@ export interface NormalizedMetaSocialEvent {
   parentCommentId?: string;
   content: string;            // Text of message or comment
   timestamp: number;
+  eventTimestamp?: string;    // ISO timestamp from Meta event
 }

@@ -37,6 +37,7 @@ export function parseMetaSocialWebhook(payload: any): NormalizedMetaSocialEvent[
         const senderId = item.sender?.id;
 
         if (mid && text && senderId) {
+          const msgTimestamp = item.timestamp || entry.time || Date.now();
           events.push({
             platform,
             accountId,
@@ -44,7 +45,8 @@ export function parseMetaSocialWebhook(payload: any): NormalizedMetaSocialEvent[
             metaEventId: String(mid),
             senderId: String(senderId),
             content: String(text).trim(),
-            timestamp: item.timestamp || Date.now(),
+            timestamp: msgTimestamp,
+            eventTimestamp: new Date(msgTimestamp).toISOString(),
           });
         }
       }
@@ -67,6 +69,7 @@ export function parseMetaSocialWebhook(payload: any): NormalizedMetaSocialEvent[
               continue;
             }
 
+            const commentTime = (value.created_time ? value.created_time * 1000 : null) || entry.time || Date.now();
             events.push({
               platform: "facebook",
               accountId,
@@ -78,7 +81,8 @@ export function parseMetaSocialWebhook(payload: any): NormalizedMetaSocialEvent[
               commentId: String(value.comment_id),
               parentCommentId: value.parent_id ? String(value.parent_id) : undefined,
               content: String(value.message || "").trim(),
-              timestamp: (value.created_time ? value.created_time * 1000 : null) || Date.now(),
+              timestamp: commentTime,
+              eventTimestamp: new Date(commentTime).toISOString(),
             });
           }
         }
@@ -94,6 +98,7 @@ export function parseMetaSocialWebhook(payload: any): NormalizedMetaSocialEvent[
           }
 
           if (commentId && text) {
+            const igCommentTime = (value.created_time ? value.created_time * 1000 : null) || entry.time || Date.now();
             events.push({
               platform: "instagram",
               accountId,
@@ -103,8 +108,10 @@ export function parseMetaSocialWebhook(payload: any): NormalizedMetaSocialEvent[
               senderName: value.from?.username || undefined,
               postId: value.media?.id ? String(value.media.id) : undefined,
               commentId: String(commentId),
+              parentCommentId: value.parent_id ? String(value.parent_id) : undefined,
               content: String(text).trim(),
-              timestamp: Date.now(),
+              timestamp: igCommentTime,
+              eventTimestamp: new Date(igCommentTime).toISOString(),
             });
           }
         }

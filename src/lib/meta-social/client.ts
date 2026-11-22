@@ -126,26 +126,30 @@ export async function replyMetaCommentPublic(params: {
   return { id: data.id };
 }
 
+const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+
 /**
- * 3. Send a Private DM to a user who commented (Meta Official Private Replies)
- * Note: Meta allows sending 1 direct message to a user within 7 days of their comment.
+ * 3. Send Facebook Private Reply to Page Comment
+ * Meta Rule: Max 1 private message within 7 days of the comment.
  */
-export async function sendMetaCommentPrivateDm(params: {
+export async function sendFacebookPrivateReply(params: {
   pageId: string;
   commentId: string;
   text: string;
   accessToken: string;
+  commentCreatedAt?: number;
 }): Promise<{ message_id: string; recipient_id: string }> {
-  const { pageId, commentId, text, accessToken } = params;
-  if (!pageId?.trim()) throw new Error("pageId is required.");
+  const { pageId, commentId, text, accessToken, commentCreatedAt } = params;
+  if (!pageId?.trim()) throw new Error("pageId is required for Facebook private replies.");
   if (!commentId?.trim()) throw new Error("commentId is required.");
   if (!text?.trim()) throw new Error("text is required.");
   if (!accessToken?.trim()) throw new Error("accessToken is required.");
 
-  const url = `${META_GRAPH_BASE_URL}/${META_GRAPH_VERSION}/${encodeURIComponent(
-    pageId.trim()
-  )}/messages`;
+  if (commentCreatedAt && Date.now() - commentCreatedAt > SEVEN_DAYS_MS) {
+    throw new Error(`Comment ${commentId} is older than 7 days; Meta rejects private replies to expired comments.`);
+  }
 
+  const url = `${META_GRAPH_BASE_URL}/${META_GRAPH_VERSION}/${encodeURIComponent(pageId.trim())}/messages`;
   const payload = {
     recipient: { comment_id: commentId.trim() },
     message: { text: text.trim() },
@@ -161,7 +165,6 @@ export async function sendMetaCommentPrivateDm(params: {
   });
 
   const data = await response.json().catch(() => ({}));
-
   if (!response.ok || data.error) {
     throw new MetaSocialApiError(data.error || { message: response.statusText, code: response.status }, url);
   }
@@ -170,4 +173,85 @@ export async function sendMetaCommentPrivateDm(params: {
     message_id: data.message_id || data.id,
     recipient_id: data.recipient_id || commentId,
   };
+}
+
+/**
+ * 4. Send Instagram Private Reply to Media / Reel Comment
+ * Meta Rule: Must use the connected Facebook Page ID (linkedPageId) and Page Access Token.
+ * Max 1 private message within 7 days of the comment.
+ */
+export async function sendInstagramPrivateReply(params: {
+  linkedPageId: string;
+  commentId: string;
+  text: string;
+  accessToken: string;
+  commentCreatedAt?: number;
+}): Promise<{ message_id: string; recipient_id: string }> {
+  const { linkedPageId, commentId, text, accessToken, commentCreatedAt } = params;
+  if (!linkedPageId?.trim()) {
+    throw new Error(
+      "linkedPageId (Facebook Page ID connected to Instagram Professional Account) is strictly required for Instagram private replies."
+    );
+  }
+  if (!commentId?.trim()) throw new Error("commentId is required.");
+  if (!text?.trim()) throw new Error("text is required.");
+  if (!accessToken?.trim()) throw new Error("accessToken is required.");
+
+  if (commentCreatedAt && Date.now() - commentCreatedAt > SEVEN_DAYS_MS) {
+    throw new Error(`Instagram comment ${commentId} is older than 7 days; Meta rejects private replies to expired comments.`);
+  }
+
+  const url = `${META_GRAPH_BASE_URL}/${META_GRAPH_VERSION}/${encodeURIComponent(linkedPageId.trim())}/messages`;
+  const payload = {
+    recipient: { comment_id: commentId.trim() },
+    message: { text: text.trim() },
+  };
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken.trim()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.error) {
+    throw new MetaSocialApiError(data.error || { message: response.statusText, code: response.status }, url);
+  }
+
+  return {
+    message_id: data.message_id || data.id,
+    recipient_id: data.recipient_id || commentId,
+  };
+}
+
+/**
+ * Backward-compatible dispatch wrapper for private comment replies
+ */
+export async function sendMetaCommentPrivateDm(params: {
+  pageId: string;
+  commentId: string;
+  text: string;
+  accessToken: string;
+  platform?: MetaSocialPlatform;
+  commentCreatedAt?: number;
+}): Promise<{ message_id: string; recipient_id: string }> {
+  if (params.platform === "instagram") {
+    return sendInstagramPrivateReply({
+      linkedPageId: params.pageId,
+      commentId: params.commentId,
+      text: params.text,
+      accessToken: params.accessToken,
+      commentCreatedAt: params.commentCreatedAt,
+    });
+  }
+  return sendFacebookPrivateReply({
+    pageId: params.pageId,
+    commentId: params.commentId,
+    text: params.text,
+    accessToken: params.accessToken,
+    commentCreatedAt: params.commentCreatedAt,
+  });
 }
