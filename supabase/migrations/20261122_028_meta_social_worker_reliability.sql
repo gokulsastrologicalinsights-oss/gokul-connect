@@ -207,10 +207,22 @@ END;
 $$;
 
 -- ------------------------------------------------------------------------------
--- 5. FUNCTION AUTHORIZATION GRANTS
+-- 5. FUNCTION AUTHORIZATION GRANTS (HARDENED: SERVICE_ROLE ONLY)
 -- ------------------------------------------------------------------------------
+REVOKE ALL ON FUNCTION public.claim_meta_social_events(TEXT, INT, INT) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.claim_meta_social_events(TEXT, INT, INT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.claim_meta_social_events(TEXT, INT, INT) TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.claim_meta_social_events(TEXT, INT, INT) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.claim_meta_social_events(TEXT, INT, INT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.claim_meta_social_events(TEXT, INT, INT) TO service_role;
 
+REVOKE ALL ON FUNCTION public.reclaim_stuck_meta_social_events(INT) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.reclaim_stuck_meta_social_events(INT) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.reclaim_stuck_meta_social_events(INT) TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.reclaim_stuck_meta_social_events(INT) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.reclaim_stuck_meta_social_events(INT) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.reclaim_stuck_meta_social_events(INT) TO service_role;
+
+COMMENT ON FUNCTION public.claim_meta_social_events(TEXT, INT, INT) IS
+    'Claims next batch of pending Meta social events using FOR UPDATE SKIP LOCKED. Restricted strictly to service_role.';
+
+COMMENT ON FUNCTION public.reclaim_stuck_meta_social_events(INT) IS
+    'Reclaims expired or stuck Meta social events. Restricted strictly to service_role.';

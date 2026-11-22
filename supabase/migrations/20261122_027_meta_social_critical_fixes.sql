@@ -165,6 +165,12 @@ CREATE POLICY "Tenant isolation for meta_social_deliveries select"
 -- ------------------------------------------------------------------------------
 -- 6. HARDENED ATOMIC INGESTION RPC (RACE-CONDITION & CONCURRENCY SAFE)
 -- ------------------------------------------------------------------------------
+-- Drop legacy 10-parameter function from Migration 026 to prevent overload ambiguity
+-- and eliminate unhardened authenticated/anon execution loophole.
+DROP FUNCTION IF EXISTS public.ingest_meta_social_event_atomic(
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT
+);
+
 CREATE OR REPLACE FUNCTION public.ingest_meta_social_event_atomic(
     p_platform TEXT,
     p_account_id TEXT,
@@ -275,6 +281,14 @@ BEGIN
 END;
 $$;
 
--- Grant execution privileges
+-- ------------------------------------------------------------------------------
+-- 6. PRIVILEGE HARDENING & LEAST PRIVILEGE GRANTS
+-- ------------------------------------------------------------------------------
+REVOKE ALL ON FUNCTION public.ingest_meta_social_event_atomic(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) FROM PUBLIC;
 REVOKE EXECUTE ON FUNCTION public.ingest_meta_social_event_atomic(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.ingest_meta_social_event_atomic(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) TO authenticated, service_role;
+REVOKE EXECUTE ON FUNCTION public.ingest_meta_social_event_atomic(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) FROM anon;
+REVOKE EXECUTE ON FUNCTION public.ingest_meta_social_event_atomic(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) FROM authenticated;
+GRANT EXECUTE ON FUNCTION public.ingest_meta_social_event_atomic(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) TO service_role;
+
+COMMENT ON FUNCTION public.ingest_meta_social_event_atomic(TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, TIMESTAMPTZ) IS
+    'Atomically ingests inbound Meta social events, verifies connection, and prevents duplicates. Restricted strictly to service_role.';
