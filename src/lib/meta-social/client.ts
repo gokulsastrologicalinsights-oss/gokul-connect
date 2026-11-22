@@ -205,6 +205,72 @@ export async function replyMetaCommentPublic(params: {
   return { id: data.id };
 }
 
+/**
+ * 2b. Retrieve Comment Details from Meta Graph API when required
+ * (e.g. if inbound webhook payload only carries comment_id or has empty text)
+ */
+export async function fetchMetaCommentDetails(params: {
+  platform: MetaSocialPlatform;
+  commentId: string;
+  accessToken: string;
+}): Promise<{ id: string; text: string; fromId?: string; fromName?: string; createdTime?: string }> {
+  const { platform, commentId, accessToken } = params;
+  if (!commentId?.trim()) throw new Error("commentId is required.");
+  if (!accessToken?.trim()) throw new Error("accessToken is required.");
+
+  // Facebook uses fields=id,message,from,created_time
+  // Instagram uses fields=id,text,from,timestamp
+  const fields =
+    platform === "facebook"
+      ? "id,message,from,created_time"
+      : "id,text,from,timestamp";
+
+  const url = `${META_GRAPH_BASE_URL}/${META_GRAPH_VERSION}/${encodeURIComponent(
+    commentId.trim()
+  )}?fields=${fields}`;
+
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken.trim()}`,
+      },
+    });
+  } catch (netErr: any) {
+    const cleanUrl = sanitizeSocialLog(url, accessToken);
+    throw new MetaSocialApiError(
+      { message: netErr.message || "Network timeout retrieving comment details", code: 504 },
+      cleanUrl,
+      { httpStatus: 504, isAmbiguous: false }
+    );
+  }
+
+  const retryAfter = parseRetryAfter(response);
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok || data.error) {
+    const cleanUrl = sanitizeSocialLog(url, accessToken);
+    throw new MetaSocialApiError(
+      data.error || { message: response.statusText, code: response.status },
+      cleanUrl,
+      { httpStatus: response.status, retryAfterSeconds: retryAfter }
+    );
+  }
+
+  const text = platform === "facebook" ? (data.message || "") : (data.text || "");
+  const fromId = data.from?.id;
+  const fromName = data.from?.name || data.from?.username;
+
+  return {
+    id: data.id || commentId,
+    text: String(text).trim(),
+    fromId,
+    fromName,
+    createdTime: data.created_time || data.timestamp,
+  };
+}
+
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
 /**
@@ -425,3 +491,137 @@ export async function checkCommentReplied(params: {
     return { replied: false };
   }
 }
+
+/**
+ * 6. Fetch Facebook Page Posts
+ * Endpoint: GET https://graph.facebook.com/v21.0/{page-id}/posts
+ */
+export async function fetchFacebookPagePosts(params: {
+  pageId: string;
+  accessToken: string;
+  limit?: number;
+}): Promise<Array<{ id: string; message?: string; created_time: string; permalink_url?: string }>> {
+  const { pageId, accessToken, limit = 10 } = params;
+  if (!pageId?.trim() || !accessToken?.trim()) return [];
+
+  const url = `${META_GRAPH_BASE_URL}/${META_GRAPH_VERSION}/${encodeURIComponent(
+    pageId.trim()
+  )}/posts?fields=id,message,created_time,permalink_url&limit=${limit}`;
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken.trim()}` },
+    });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => ({}));
+    return Array.isArray(data?.data) ? data.data : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 7. Fetch Facebook Post Comments
+ * Endpoint: GET https://graph.facebook.com/v21.0/{post-id}/comments
+ */
+export async function fetchFacebookPostComments(params: {
+  postId: string;
+  accessToken: string;
+  limit?: number;
+}): Promise<
+  Array<{
+    id: string;
+    from?: { id: string; name: string };
+    message: string;
+    created_time: string;
+    comments?: { data?: Array<{ id: string; message: string; created_time: string }> };
+  }>
+> {
+  const { postId, accessToken, limit = 25 } = params;
+  if (!postId?.trim() || !accessToken?.trim()) return [];
+
+  const url = `${META_GRAPH_BASE_URL}/${META_GRAPH_VERSION}/${encodeURIComponent(
+    postId.trim()
+  )}/comments?fields=id,from,message,created_time,comments{id,message,created_time}&limit=${limit}`;
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken.trim()}` },
+    });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => ({}));
+    return Array.isArray(data?.data) ? data.data : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 8. Fetch Instagram Media
+ * Endpoint: GET https://graph.facebook.com/v21.0/{ig-user-id}/media
+ */
+export async function fetchInstagramMedia(params: {
+  instagramAccountId: string;
+  accessToken: string;
+  limit?: number;
+}): Promise<Array<{ id: string; caption?: string; media_type?: string; permalink?: string; timestamp: string }>> {
+  const { instagramAccountId, accessToken, limit = 10 } = params;
+  if (!instagramAccountId?.trim() || !accessToken?.trim()) return [];
+
+  const url = `${META_GRAPH_BASE_URL}/${META_GRAPH_VERSION}/${encodeURIComponent(
+    instagramAccountId.trim()
+  )}/media?fields=id,caption,media_type,permalink,timestamp&limit=${limit}`;
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken.trim()}` },
+    });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => ({}));
+    return Array.isArray(data?.data) ? data.data : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * 9. Fetch Instagram Media Comments
+ * Endpoint: GET https://graph.facebook.com/v21.0/{media-id}/comments
+ */
+export async function fetchInstagramMediaComments(params: {
+  mediaId: string;
+  accessToken: string;
+  limit?: number;
+}): Promise<
+  Array<{
+    id: string;
+    text: string;
+    timestamp: string;
+    username?: string;
+    from?: { id: string; username: string };
+    replies?: { data?: Array<{ id: string; text: string; timestamp: string; username?: string }> };
+  }>
+> {
+  const { mediaId, accessToken, limit = 25 } = params;
+  if (!mediaId?.trim() || !accessToken?.trim()) return [];
+
+  const url = `${META_GRAPH_BASE_URL}/${META_GRAPH_VERSION}/${encodeURIComponent(
+    mediaId.trim()
+  )}/comments?fields=id,text,timestamp,username,from,replies{id,text,timestamp,username}&limit=${limit}`;
+
+  try {
+    const res = await fetch(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken.trim()}` },
+    });
+    if (!res.ok) return [];
+    const data = await res.json().catch(() => ({}));
+    return Array.isArray(data?.data) ? data.data : [];
+  } catch {
+    return [];
+  }
+}
+

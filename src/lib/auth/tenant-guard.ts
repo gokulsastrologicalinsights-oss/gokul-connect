@@ -10,6 +10,8 @@ export interface AuthorizedContext {
   membership: BusinessMember;
 }
 
+export { validateBusinessTenant } from "@/lib/connections/store";
+
 /**
  * Server-side tenant security check:
  * Validates that the active session user is authorized to enter or read data

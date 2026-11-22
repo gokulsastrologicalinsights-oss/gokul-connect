@@ -20,6 +20,8 @@ import {
   CheckSquare,
   Bell,
   Activity,
+  Share2,
+  MessagesSquare,
 } from "lucide-react";
 import { BusinessSlug } from "@/types/database";
 import { getInboxUnreadCountAction } from "@/app/actions/inbox";
@@ -163,6 +165,30 @@ export function WorkspaceSidebar({ slug, businessName }: WorkspaceSidebarProps) 
           href: `/workspace/${slug}/connections`,
           icon: Smartphone,
           phase: 2,
+          isImplemented: true,
+        },
+        {
+          name: "Meta Connections",
+          href: `/workspace/${slug}/connections/social`,
+          icon: Share2,
+          phase: 13,
+          badge: "Meta",
+          isImplemented: true,
+        },
+        {
+          name: "Social Automation",
+          href: `/workspace/${slug}/social-automation`,
+          icon: Bot,
+          phase: 13,
+          badge: "Meta",
+          isImplemented: true,
+        },
+        {
+          name: "Social Comments",
+          href: `/workspace/${slug}/comments`,
+          icon: MessagesSquare,
+          phase: 13,
+          badge: "New",
           isImplemented: true,
         },
         {

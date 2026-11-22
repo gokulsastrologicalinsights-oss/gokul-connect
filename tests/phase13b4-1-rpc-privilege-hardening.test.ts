@@ -8,8 +8,8 @@ import * as webhookRoute from "@/app/api/webhooks/meta-social/route";
 
 describe("Phase 13B.4.1 — RPC Privilege Hardening & Security Verification", () => {
   const MIGRATIONS_DIR = path.resolve(process.cwd(), "supabase/migrations");
-  const migration027Path = path.join(MIGRATIONS_DIR, "20261122_027_meta_social_critical_fixes.sql");
-  const migration028Path = path.join(MIGRATIONS_DIR, "20261122_028_meta_social_worker_reliability.sql");
+  const migration027Path = path.join(MIGRATIONS_DIR, "20261122171900_027_meta_social_critical_fixes.sql");
+  const migration028Path = path.join(MIGRATIONS_DIR, "20261122172000_028_meta_social_worker_reliability.sql");
 
   let sql027: string;
   let sql028: string;

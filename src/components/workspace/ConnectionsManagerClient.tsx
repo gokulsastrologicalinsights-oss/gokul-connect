@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import {
   createConnectionAction,
   disconnectConnectionAction,
@@ -305,6 +306,15 @@ export function ConnectionsManagerClient({
         </div>
 
         <div className="flex items-center gap-2.5">
+          <Link
+            href={`/workspace/${business.slug}/connections/social`}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 hover:text-indigo-600 transition-all shadow-2xs"
+          >
+            <Layers className="h-3.5 w-3.5 text-indigo-600" />
+            <span>Meta Social (FB & IG)</span>
+            <ArrowRight className="h-3 w-3 text-slate-400" />
+          </Link>
+
           <Button
             onClick={() => {
               setFormError(null);

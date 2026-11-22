@@ -5,7 +5,12 @@ import type {
   MetaSocialDeliveryStatus,
   MetaSocialEvent,
 } from "./types";
-import { findMatchingSocialRule, normalizeSocialText } from "./evaluator";
+import {
+  findMatchingSocialRule,
+  normalizeSocialText,
+  getMatchedSocialKeyword,
+  resolvePublicReplyText,
+} from "./evaluator";
 import {
   ingestSocialEvent,
   getSocialRulesForBusiness,
@@ -19,6 +24,7 @@ import {
 import {
   sendMetaSocialDm,
   replyMetaCommentPublic,
+  fetchMetaCommentDetails,
   sendFacebookPrivateReply,
   sendInstagramPrivateReply,
   sendMetaCommentPrivateDm,
@@ -334,6 +340,41 @@ export async function processPersistedMetaSocialEvent(
         return { success: true, status: "ignored", eventId };
       }
 
+      // 5.0 Retrieve Comment Details when required (e.g. if content is missing/empty in webhook)
+      if (!event.content || event.content.trim() === "") {
+        try {
+          const fetchedDetails = await fetchMetaCommentDetails({
+            platform: event.platform,
+            commentId: event.comment_id,
+            accessToken,
+          });
+          if (fetchedDetails && fetchedDetails.text) {
+            event.content = fetchedDetails.text;
+            if (fetchedDetails.fromName && !event.sender_name) {
+              event.sender_name = fetchedDetails.fromName;
+            }
+            // Persist the retrieved content back to the ledger
+            try {
+              await supabase
+                .from("meta_social_events")
+                .update({
+                  content: fetchedDetails.text,
+                  sender_name: event.sender_name,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", eventId);
+            } catch {
+              // Non-fatal if update fails
+            }
+          }
+        } catch (fetchErr: any) {
+          console.warn(
+            `[Meta Social Service] Failed to retrieve comment details for ${event.comment_id}:`,
+            fetchErr?.message
+          );
+        }
+      }
+
       const rules = await getSocialRulesForBusiness(supabase, businessId);
       const matchedRule = findMatchingSocialRule(
         rules,
@@ -358,7 +399,8 @@ export async function processPersistedMetaSocialEvent(
             matchedRule.response_action === "both_public_and_private") &&
           conn.auto_dm_on_comment !== false;
 
-        publicReplyText = matchedRule.predefined_reply;
+        const matchedKw = getMatchedSocialKeyword(matchedRule, event.content) || undefined;
+        publicReplyText = resolvePublicReplyText(matchedRule.predefined_reply, event.content, matchedKw);
         privateDmText = matchedRule.predefined_dm || conn.default_dm_reply || matchedRule.predefined_reply;
       } else {
         // Default keyword triggers
@@ -407,7 +449,7 @@ export async function processPersistedMetaSocialEvent(
       // 5.1 Public Comment Reply Pipeline (Task 3 Idempotency & Partial Retries)
       // ------------------------------------------------------------------------
       if (shouldDoPublic) {
-        const pubIdempKey = `idemp_pub_${eventId}_${event.comment_id}`;
+        const pubIdempKey = `idemp_pub_${event.platform}_${conn.account_id}_${event.comment_id}`;
         const existingPub = await getSocialDeliveryByIdempotencyKey(supabase, pubIdempKey);
 
         // Check if already succeeded in previous attempt or on event

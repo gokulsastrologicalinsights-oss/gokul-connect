@@ -577,10 +577,45 @@ export async function updateSocialEventResult(
     updatePayload.next_retry_at = result.nextRetryAt;
   }
 
-  await supabase
-    .from("meta_social_events")
-    .update(updatePayload)
-    .eq("id", eventId);
+  try {
+    const res = await supabase
+      .from("meta_social_events")
+      .update(updatePayload)
+      .eq("id", eventId);
+
+    // If schema error occurred due to unapplied Migration 027 columns, fallback to core Migration 026 schema
+    if (res?.error && res.error.message?.includes("column")) {
+      const baselinePayload = {
+        status: result.status,
+        matched_rule_id: result.matchedRuleId || null,
+        reply_type: result.replyType || "none",
+        reply_content: result.replyContent || null,
+        error_message: result.errorMessage || null,
+        updated_at: new Date().toISOString(),
+      };
+      await supabase
+        .from("meta_social_events")
+        .update(baselinePayload)
+        .eq("id", eventId);
+    }
+  } catch {
+    // Non-fatal fallback attempt
+    try {
+      await supabase
+        .from("meta_social_events")
+        .update({
+          status: result.status,
+          matched_rule_id: result.matchedRuleId || null,
+          reply_type: result.replyType || "none",
+          reply_content: result.replyContent || null,
+          error_message: result.errorMessage || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", eventId);
+    } catch {
+      // Ignored
+    }
+  }
 }
 
 /**
