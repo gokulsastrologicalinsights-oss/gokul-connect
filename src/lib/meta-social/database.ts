@@ -4,6 +4,9 @@ import type {
   MetaSocialEvent,
   MetaSocialDelivery,
   NormalizedMetaSocialEvent,
+  MetaSocialEventStatus,
+  MetaSocialDeliveryStatus,
+  SocialOperationalMetrics,
 } from "./types";
 
 /**
@@ -92,8 +95,6 @@ export async function ingestSocialEvent(
     );
 
     if (rpcError) {
-      // Check if procedure is genuinely missing (e.g. migration 027 not yet applied)
-      // Otherwise rethrow/return as error
       const isMissingProc =
         rpcError.message?.includes("function") &&
         rpcError.message?.includes("does not exist");
@@ -214,6 +215,233 @@ export async function ingestSocialEvent(
 }
 
 /**
+ * Atomically claims pending social events using claim_meta_social_events RPC (FOR UPDATE SKIP LOCKED)
+ * Task 2 Implementation
+ */
+export async function claimSocialEvents(
+  supabase: any,
+  workerId: string,
+  batchSize: number = 10,
+  leaseSeconds: number = 300
+): Promise<MetaSocialEvent[]> {
+  try {
+    if (supabase?.rpc && typeof supabase.rpc === "function") {
+      const rpcRes = await supabase.rpc("claim_meta_social_events", {
+        p_worker_id: workerId,
+        p_batch_size: batchSize,
+        p_lease_seconds: leaseSeconds,
+      });
+
+      if (rpcRes && !rpcRes.error && Array.isArray(rpcRes.data)) {
+        return rpcRes.data as MetaSocialEvent[];
+      }
+      if (rpcRes?.error && !rpcRes.error.message?.includes("does not exist")) {
+        console.error("[Meta Social DB] Error in claim_meta_social_events RPC:", rpcRes.error);
+      }
+    }
+  } catch (err: any) {
+    console.warn("[Meta Social DB] Exception calling claim_meta_social_events RPC:", err?.message || err);
+  }
+
+  // Fallback for mocked test environments or pre-RPC databases
+  try {
+    const tableRef = supabase?.from ? supabase.from("meta_social_events") : null;
+    if (!tableRef) return [];
+
+    const nowIso = new Date().toISOString();
+    const leaseExpiresIso = new Date(Date.now() + leaseSeconds * 1000).toISOString();
+
+    const { data: candidates, error: fetchErr } = await tableRef
+      .select("*")
+      .or("status.eq.received,status.eq.retry_scheduled")
+      .order("created_at", { ascending: true })
+      .limit(batchSize);
+
+    if (fetchErr || !candidates || candidates.length === 0) {
+      return [];
+    }
+
+    const claimedEvents: MetaSocialEvent[] = [];
+    for (const cand of candidates) {
+      // Check retry schedule delay
+      if (cand.status === "retry_scheduled" && cand.next_retry_at && new Date(cand.next_retry_at).getTime() > Date.now()) {
+        continue;
+      }
+
+      // Transition to processing
+      const { data: updated, error: updateErr } = await supabase
+        .from("meta_social_events")
+        .update({
+          status: "processing",
+          claimed_by: workerId,
+          claimed_at: nowIso,
+          lease_expires_at: leaseExpiresIso,
+          attempt_count: (cand.attempt_count || 0) + 1,
+          updated_at: nowIso,
+        })
+        .eq("id", cand.id)
+        .eq("status", cand.status) // Optimistic concurrency check
+        .select("*")
+        .maybeSingle();
+
+      if (!updateErr && updated) {
+        claimedEvents.push(updated as MetaSocialEvent);
+      }
+    }
+
+    return claimedEvents;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Reclaim abandoned processing jobs whose leases have expired (Task 4 Recovery)
+ */
+export async function reclaimStuckSocialEvents(
+  supabase: any,
+  timeoutSeconds: number = 300
+): Promise<{ reclaimed: number; exhausted: number }> {
+  try {
+    if (supabase?.rpc && typeof supabase.rpc === "function") {
+      const recRes = await supabase.rpc("reclaim_stuck_meta_social_events", {
+        p_timeout_seconds: timeoutSeconds,
+      });
+
+      if (recRes && !recRes.error && recRes.data) {
+        return {
+          reclaimed: Number(recRes.data.reclaimed || 0),
+          exhausted: Number(recRes.data.exhausted || 0),
+        };
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  // Fallback for test environments without RPC
+  try {
+    const tableRef = supabase?.from ? supabase.from("meta_social_events") : null;
+    if (!tableRef) return { reclaimed: 0, exhausted: 0 };
+
+    const nowTime = Date.now();
+    const thresholdIso = new Date(nowTime - timeoutSeconds * 1000).toISOString();
+
+    const { data: stuckRows, error } = await tableRef
+      .select("*")
+      .eq("status", "processing")
+      .limit(50);
+
+    if (error || !stuckRows || stuckRows.length === 0) {
+      return { reclaimed: 0, exhausted: 0 };
+    }
+
+    let reclaimed = 0;
+    let exhausted = 0;
+
+    for (const row of stuckRows) {
+      const isExpired =
+        (row.lease_expires_at && new Date(row.lease_expires_at).getTime() < nowTime) ||
+        (row.claimed_at && new Date(row.claimed_at).getTime() < new Date(thresholdIso).getTime());
+
+      if (isExpired) {
+        const attempts = row.attempt_count || 1;
+        const maxAttempts = row.max_attempts || 3;
+
+        if (attempts >= maxAttempts) {
+          await supabase
+            .from("meta_social_events")
+            .update({
+              status: "permanently_failed",
+              error_message: "Exhausted maximum retry attempts while stuck in processing lease",
+              claimed_by: null,
+              lease_expires_at: null,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", row.id);
+          exhausted++;
+        } else {
+          await supabase
+            .from("meta_social_events")
+            .update({
+              status: "received",
+              claimed_by: null,
+              lease_expires_at: null,
+              error_message: "Reclaimed from expired worker lease",
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", row.id);
+          reclaimed++;
+        }
+      }
+    }
+
+    return { reclaimed, exhausted };
+  } catch {
+    return { reclaimed: 0, exhausted: 0 };
+  }
+}
+
+/**
+ * Fetch persisted event by ID (Task 1 Fix)
+ */
+export async function getSocialEventById(
+  supabase: any,
+  eventId: string
+): Promise<MetaSocialEvent | null> {
+  try {
+    const tableRef = supabase?.from ? supabase.from("meta_social_events") : null;
+    if (!tableRef || typeof tableRef.select !== "function") {
+      return null;
+    }
+    const query = tableRef.select("*").eq("id", eventId);
+    let result: any;
+    if (typeof query.maybeSingle === "function") {
+      result = await query.maybeSingle();
+    } else if (typeof query.single === "function") {
+      result = await query.single();
+    } else {
+      result = await query;
+      if (Array.isArray(result?.data)) {
+        result.data = result.data[0] || null;
+      }
+    }
+    return result?.data || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch delivery record by idempotency key (Task 3 Fix)
+ */
+export async function getSocialDeliveryByIdempotencyKey(
+  supabase: any,
+  idempotencyKey: string
+): Promise<MetaSocialDelivery | null> {
+  try {
+    const tableRef = supabase?.from ? supabase.from("meta_social_deliveries") : null;
+    if (!tableRef || typeof tableRef.select !== "function") return null;
+
+    const query = tableRef.select("*").eq("idempotency_key", idempotencyKey);
+    let result: any;
+    if (typeof query.maybeSingle === "function") {
+      result = await query.maybeSingle();
+    } else if (typeof query.single === "function") {
+      result = await query.single();
+    } else {
+      result = await query;
+      if (Array.isArray(result?.data)) {
+        result.data = result.data[0] || null;
+      }
+    }
+    return result?.data || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Record an individual outbound delivery action in meta_social_deliveries
  */
 export async function recordSocialDelivery(
@@ -227,7 +455,7 @@ export async function recordSocialDelivery(
     recipientId: string;
     requestPayload: Record<string, unknown>;
     idempotencyKey: string;
-    status?: "pending" | "processing" | "succeeded" | "failed";
+    status?: MetaSocialDeliveryStatus;
     responseId?: string | null;
     lastError?: string | null;
   }
@@ -275,7 +503,7 @@ export async function updateSocialDeliveryResult(
   supabase: any,
   deliveryId: string,
   result: {
-    status: "succeeded" | "failed" | "retry_scheduled" | "permanently_failed";
+    status: MetaSocialDeliveryStatus;
     responseId?: string | null;
     lastError?: string | null;
     attemptCount?: number;
@@ -308,15 +536,17 @@ export async function updateSocialEventResult(
   supabase: any,
   eventId: string,
   result: {
-    status: "received" | "processed" | "replied" | "ignored" | "failed";
+    status: MetaSocialEventStatus;
     matchedRuleId?: string | null;
     replyType?: "dm_reply" | "comment_public_reply" | "comment_private_dm" | "both" | "none";
     replyContent?: string;
-    publicReplyStatus?: "none" | "pending" | "replied" | "failed" | "skipped";
-    privateReplyStatus?: "none" | "pending" | "replied" | "failed" | "skipped";
+    publicReplyStatus?: "none" | "pending" | "replied" | "failed" | "skipped" | "retry_scheduled" | "ambiguous_outcome";
+    privateReplyStatus?: "none" | "pending" | "replied" | "failed" | "skipped" | "retry_scheduled" | "ambiguous_outcome";
     publicReplyId?: string | null;
     privateReplyId?: string | null;
     errorMessage?: string;
+    attemptCount?: number;
+    nextRetryAt?: string | null;
   }
 ): Promise<void> {
   const updatePayload: Record<string, unknown> = {
@@ -325,6 +555,7 @@ export async function updateSocialEventResult(
     reply_type: result.replyType || "none",
     reply_content: result.replyContent || null,
     error_message: result.errorMessage || null,
+    updated_at: new Date().toISOString(),
   };
 
   if (result.publicReplyStatus) {
@@ -339,9 +570,82 @@ export async function updateSocialEventResult(
   if (result.privateReplyId !== undefined) {
     updatePayload.private_reply_id = result.privateReplyId;
   }
+  if (result.attemptCount !== undefined) {
+    updatePayload.attempt_count = result.attemptCount;
+  }
+  if (result.nextRetryAt !== undefined) {
+    updatePayload.next_retry_at = result.nextRetryAt;
+  }
 
   await supabase
     .from("meta_social_events")
     .update(updatePayload)
     .eq("id", eventId);
+}
+
+/**
+ * Operational Observability Aggregator (Task 8)
+ */
+export async function getSocialOperationalMetrics(
+  supabase: any,
+  businessId?: string
+): Promise<SocialOperationalMetrics> {
+  const metrics: SocialOperationalMetrics = {
+    eventsReceived: 0,
+    eventsPending: 0,
+    eventsProcessing: 0,
+    eventsSucceeded: 0,
+    eventsFailed: 0,
+    deliveriesSucceeded: 0,
+    deliveriesFailed: 0,
+    retryCount: 0,
+    ambiguousOutcomes: 0,
+    expiredLeases: 0,
+  };
+
+  try {
+    let eventQuery = supabase.from("meta_social_events").select("status, lease_expires_at, attempt_count");
+    if (businessId) {
+      eventQuery = eventQuery.eq("business_id", businessId);
+    }
+    const { data: events } = await eventQuery;
+
+    const now = Date.now();
+    if (events && Array.isArray(events)) {
+      for (const ev of events) {
+        if (ev.status === "received") metrics.eventsReceived++;
+        if (ev.status === "received" || ev.status === "retry_scheduled") metrics.eventsPending++;
+        if (ev.status === "processing") {
+          metrics.eventsProcessing++;
+          if (ev.lease_expires_at && new Date(ev.lease_expires_at).getTime() < now) {
+            metrics.expiredLeases++;
+          }
+        }
+        if (ev.status === "replied" || ev.status === "processed") metrics.eventsSucceeded++;
+        if (ev.status === "failed" || ev.status === "permanently_failed") metrics.eventsFailed++;
+        if (ev.status === "ambiguous_outcome") metrics.ambiguousOutcomes++;
+        if (ev.attempt_count && ev.attempt_count > 1) {
+          metrics.retryCount += ev.attempt_count - 1;
+        }
+      }
+    }
+
+    let delQuery = supabase.from("meta_social_deliveries").select("status");
+    if (businessId) {
+      delQuery = delQuery.eq("business_id", businessId);
+    }
+    const { data: deliveries } = await delQuery;
+
+    if (deliveries && Array.isArray(deliveries)) {
+      for (const d of deliveries) {
+        if (d.status === "succeeded") metrics.deliveriesSucceeded++;
+        if (d.status === "failed" || d.status === "permanently_failed") metrics.deliveriesFailed++;
+        if (d.status === "ambiguous_outcome") metrics.ambiguousOutcomes++;
+      }
+    }
+  } catch {
+    // Non-fatal
+  }
+
+  return metrics;
 }

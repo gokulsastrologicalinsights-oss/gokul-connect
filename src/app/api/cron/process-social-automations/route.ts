@@ -11,6 +11,7 @@ export const maxDuration = 60;
  * ==============================================================================
  * Asynchronously processes pending Facebook & Instagram comment and DM events.
  * Enforces fail-closed CRON_SECRET authentication and distributed locking.
+ * Supports configurable batch size and bounded execution time.
  * ==============================================================================
  */
 export async function GET(request: NextRequest) {
@@ -22,14 +23,29 @@ export async function POST(request: NextRequest) {
 }
 
 async function handleCronRequest(request: NextRequest) {
+  const { searchParams } = new URL(request.url);
+  const rawBatch = searchParams.get("batch_size");
+  const batchSize = rawBatch ? Math.min(Math.max(parseInt(rawBatch, 10) || 15, 1), 50) : 15;
+
   return runCoordinatedCron({
     cronName: "process-social-automations",
     workerType: "automation_worker",
     request,
     handler: async (workerId) => {
-      const result = await processSocialEventsBatch(15, workerId);
+      const result = await processSocialEventsBatch(batchSize, workerId);
       return {
-        socialAutomations: result,
+        socialAutomations: {
+          workerId: result.workerId,
+          claimed: result.claimedCount,
+          processed: result.processedCount,
+          succeeded: result.succeededCount,
+          failed: result.failedCount,
+          retried: result.retriedCount,
+          ambiguous: result.ambiguousCount,
+          reclaimed: result.reclaimedCount,
+          durationMs: result.durationMs,
+          metrics: result.metrics,
+        },
       };
     },
   });

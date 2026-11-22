@@ -114,6 +114,7 @@ All cron endpoints are secured using fail-closed Bearer token authentication mat
 
 | Endpoint | Schedule / Interval | Purpose |
 | :--- | :--- | :--- |
+| `/api/cron/process-social-automations` | Every 1–2 minutes (`* * * * *` or `*/2 * * * *`) | Processes pending Facebook & Instagram comments, private DMs, retries, and reclaims expired worker leases |
 | `/api/cron/process-automation-jobs` | Every 1–2 minutes (`* * * * *` or `*/2 * * * *`) | Processes due automation queue jobs, message follow-ups, and prunes stale records |
 | `/api/cron/process-scheduled-messages` | Every 1–5 minutes (`* * * * *` or `*/5 * * * *`) | Dispatches due pre-scheduled WhatsApp messages |
 | `/api/cron/process-crm-reminders` | Every 5–15 minutes (`*/5 * * * *` or `*/15 * * * *`) | Generates scheduled CRM reminders and lead follow-up notifications |

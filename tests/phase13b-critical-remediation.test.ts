@@ -32,7 +32,7 @@ describe("Phase 13B — Critical Backend Remediation Test Suite", () => {
     vi.spyOn(admin, "createAdminClient").mockReturnValue({
       from: vi.fn().mockReturnValue({ select: vi.fn(), insert: vi.fn(), update: vi.fn(), upsert: vi.fn() }),
       rpc: vi.fn(),
-    });
+    } as unknown as ReturnType<typeof admin.createAdminClient>);
   });
 
   // ============================================================================

@@ -54,6 +54,17 @@ export interface MetaSocialRule {
   updated_at: string;
 }
 
+export type MetaSocialEventStatus =
+  | 'received'
+  | 'processing'
+  | 'processed'
+  | 'replied'
+  | 'failed'
+  | 'retry_scheduled'
+  | 'permanently_failed'
+  | 'ambiguous_outcome'
+  | 'ignored';
+
 export interface MetaSocialEvent {
   id: string;
   business_id: string;
@@ -67,17 +78,24 @@ export interface MetaSocialEvent {
   comment_id?: string | null;
   parent_comment_id?: string | null;
   content: string;
-  status: 'received' | 'processed' | 'replied' | 'failed' | 'ignored';
+  status: MetaSocialEventStatus;
   matched_rule_id?: string | null;
   reply_type?: 'dm_reply' | 'comment_public_reply' | 'comment_private_dm' | 'both' | 'none' | null;
   reply_content?: string | null;
-  public_reply_status?: 'none' | 'pending' | 'replied' | 'failed' | 'skipped' | null;
-  private_reply_status?: 'none' | 'pending' | 'replied' | 'failed' | 'skipped' | null;
+  public_reply_status?: 'none' | 'pending' | 'replied' | 'failed' | 'skipped' | 'retry_scheduled' | 'ambiguous_outcome' | null;
+  private_reply_status?: 'none' | 'pending' | 'replied' | 'failed' | 'skipped' | 'retry_scheduled' | 'ambiguous_outcome' | null;
   public_reply_id?: string | null;
   private_reply_id?: string | null;
   error_message?: string | null;
   event_timestamp?: string | null;
+  claimed_by?: string | null;
+  claimed_at?: string | null;
+  lease_expires_at?: string | null;
+  attempt_count?: number;
+  max_attempts?: number;
+  next_retry_at?: string | null;
   created_at: string;
+  updated_at?: string;
 }
 
 export type MetaSocialDeliveryActionType =
@@ -91,7 +109,8 @@ export type MetaSocialDeliveryStatus =
   | 'succeeded'
   | 'failed'
   | 'retry_scheduled'
-  | 'permanently_failed';
+  | 'permanently_failed'
+  | 'ambiguous_outcome';
 
 export interface MetaSocialDelivery {
   id: string;
@@ -109,6 +128,9 @@ export interface MetaSocialDelivery {
   last_error?: string | null;
   idempotency_key: string;
   next_retry_at?: string | null;
+  claimed_by?: string | null;
+  claimed_at?: string | null;
+  lease_expires_at?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -129,4 +151,21 @@ export interface NormalizedMetaSocialEvent {
   content: string;            // Text of message or comment
   timestamp: number;
   eventTimestamp?: string;    // ISO timestamp from Meta event
+}
+
+/**
+ * Operational observability metrics for Meta Social Automation
+ */
+export interface SocialOperationalMetrics {
+  eventsReceived: number;
+  eventsPending: number;
+  eventsProcessing: number;
+  eventsSucceeded: number;
+  eventsFailed: number;
+  deliveriesSucceeded: number;
+  deliveriesFailed: number;
+  retryCount: number;
+  ambiguousOutcomes: number;
+  expiredLeases: number;
+  workerDurationMs?: number;
 }
